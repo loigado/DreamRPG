@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: dcebbce39b37e284f8c4e721afaad87b
+timeCreated: 1508401222
+licenseType: Store
+TextScriptImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 101668
+  packageName: Heavy Sword
+  packageVersion: 1.1.1
+  assetPath: Assets/WeaponScene/Readme.txt
+  uploadId: 226308

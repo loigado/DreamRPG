@@ -1,0 +1,17 @@
+QMS - Fantasy Sword Pack FREE
+https://assetstore.unity.com/packages/slug/282110 
+
+=============
+Release Notes
+=============
+
+
+Version 1.0.1
+
+	• Added new sword, Sword_026.
+	• Example Scene Updated: Showcases all swords, including new additions.
+
+
+Version 1.0.0
+
+	• Initial Release: Introduces the "QMS - Fantasy Sword Pack FREE" with two high-quality fantasy swords: Sword_012 and Sword_015.

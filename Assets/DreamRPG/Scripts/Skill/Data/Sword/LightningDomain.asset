@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87168437e55a25340b69e1d8ed84e106, type: 3}
+  m_Name: LightningDomain
+  m_EditorClassIdentifier: Assembly-CSharp::SkillData
+  skillName: LightningDomain
+  element: 2
+  icon: {fileID: 0}
+  cooldownTime: 5
+  staminaCost: 20
+  animationName: StormDomain
+  isWarpSkill: 0
+  swordProjectilePrefab: {fileID: 7392759932067678839, guid: 9a3836a28671f7e4ea9b800063cc5547, type: 3}
+  projectileSpeed: 50
+  maxProjectileDistance: 20
+  vfxPrefab: {fileID: 3521288894642801586, guid: b717988438623114bb363a5e5d81263e, type: 3}
+  damageMultiplier: 0.5
+  ghostMaterial: {fileID: 2100000, guid: 6bffa85c119bb5f4fa5fabf34c2fe4fd, type: 2}

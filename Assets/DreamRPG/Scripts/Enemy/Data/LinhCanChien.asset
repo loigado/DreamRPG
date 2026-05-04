@@ -1,0 +1,54 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b43bb0c8901fc404abec4ff2377167ee, type: 3}
+  m_Name: LinhCanChien
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyStatsSO
+  maxHealth: 100
+  moveSpeed: 3
+  turnSpeed: 120
+  attackDamage: 10
+  attackRange: 1.25
+  attackCooldown: 3
+  attackVariants: 2
+  detectionRange: 10
+  patrolRadius: 8
+  patrolWaitTime: 2
+  strafeTimeMin: 2
+  strafeTimeMax: 4
+  gapCloserRange: 10
+  dropAggroRange: 15
+  aggroMemoryDuration: 6
+  visionRange: 12
+  visionAngle: 90
+  hearingRange: 4
+  alertDuration: 1.5
+  idleTimeMin: 3
+  idleTimeMax: 6
+  innerRingRadius: 2.5
+  outerRingRadius: 5.5
+  dodgeChance: 30
+  feintIntervalMin: 2
+  feintIntervalMax: 4
+  separationRadius: 1.4
+  separationStrength: 8
+  slotArrivalTolerance: 0.4
+  yieldSpeedMultiplier: 0.25
+  yieldMaxDuration: 0.8
+  priorityId: 1
+  lightStaggerDuration: 0.4
+  heavyStaggerDuration: 1
+  heavyStaggerThreshold: 0.15
+  dodgeSpeed: 6
+  dodgeDuration: 0.5
+  gapCloserSpeed: 8
+  gapCloserCooldown: 8
+  freezeMaterial: {fileID: 2100000, guid: 265d14f0d8cc63a489d86039ddd4dc1e, type: 2}

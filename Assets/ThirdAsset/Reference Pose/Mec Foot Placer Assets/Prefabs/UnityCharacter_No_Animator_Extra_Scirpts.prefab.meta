@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 78779093ef95e9543acda401922198ed
+timeCreated: 1471261744
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 36961
+  packageName: Mec Foot Placer
+  packageVersion: 1.7
+  assetPath: Assets/Reference Pose/Mec Foot Placer Assets/Prefabs/UnityCharacter_No_Animator_Extra_Scirpts.prefab
+  uploadId: 354491

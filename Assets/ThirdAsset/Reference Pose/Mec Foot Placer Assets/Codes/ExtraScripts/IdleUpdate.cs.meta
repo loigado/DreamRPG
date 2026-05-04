@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: e99a9d1095125404aa5bc5755280c96d
+timeCreated: 1431528875
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 36961
+  packageName: Mec Foot Placer
+  packageVersion: 1.7
+  assetPath: Assets/Reference Pose/Mec Foot Placer Assets/Codes/ExtraScripts/IdleUpdate.cs
+  uploadId: 354491

@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5103833351cc5fd44be6b3c5d9856334, type: 3}
+  m_Name: Bow_Data
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponData
+  WeaponName: Cung
+  WeaponAnimID: 3
+  Type: 1
+  Damage: 20
+  StaminaCost: 15
+  ComboAnimationNames:
+  - Bow_Shoot
+  DashAttackAnimName: 
+  ArrowPrefab: {fileID: 2013828501162641621, guid: ef1230c9a3475a04181bf5ab9c1f4492, type: 3}
+  ShootForce: 25
+  EquipAnimName: DrawBow
+  UnequipAnimName: UnDrawBow
+  LocomotionStateName: Bow_Locomotion
+  JumpAnimName: Bow_Jump
+  RollAnimName: Bow_Roll
+  BlockAnimName: Block_Idle
+  ParryAnimName: Parry
+  GuardBreakAnimName: GuardBreak
+  BlockHitAnimName: Block_Hit
+  ShieldMaterial: {fileID: 2100000, guid: 8ef09a273d2bbb746a7abd4e7234f456, type: 2}
+  skill1: {fileID: 11400000, guid: 17b08661ba11d51419f4e5b80c189569, type: 2}
+  skill2: {fileID: 11400000, guid: a8f0a579328e6a941b3d38ffd81a0a6b, type: 2}
+  skill3: {fileID: 11400000, guid: 03b32d67b6ae57443a6d086fa3ebda5f, type: 2}

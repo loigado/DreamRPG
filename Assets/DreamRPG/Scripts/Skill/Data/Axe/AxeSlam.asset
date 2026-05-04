@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87168437e55a25340b69e1d8ed84e106, type: 3}
+  m_Name: AxeSlam
+  m_EditorClassIdentifier: Assembly-CSharp::SkillData
+  skillName: AxeSlam
+  element: 4
+  icon: {fileID: 0}
+  cooldownTime: 5
+  staminaCost: 20
+  animationName: AxeSlam
+  isWarpSkill: 0
+  swordProjectilePrefab: {fileID: 6913769687126135685, guid: 97cf45620fba7f54baa940a2cdca1e5b, type: 3}
+  projectileSpeed: 50
+  maxProjectileDistance: 20
+  chargeVfxPrefab: {fileID: 0}
+  vfxPrefab: {fileID: 2754480078800281641, guid: 37369b6752369b144af0f95400e8eb05, type: 3}
+  damageMultiplier: 3
+  freezeDuration: 2
+  ghostPrefab: {fileID: 0}
+  ghostMaterial: {fileID: 0}
+  iceFormMaterials: []

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 55aea60f10c44db46af2721bca87b6b7
+timeCreated: 1431339824
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 36961
+  packageName: Mec Foot Placer
+  packageVersion: 1.7
+  assetPath: Assets/Reference Pose/Mec Foot Placer Assets/Media/Animations/SimpleLocomotionController.controller
+  uploadId: 354491

@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87168437e55a25340b69e1d8ed84e106, type: 3}
+  m_Name: Great Gale Vortex
+  m_EditorClassIdentifier: Assembly-CSharp::SkillData
+  skillName: GreatGaleVortex
+  element: 3
+  icon: {fileID: 0}
+  cooldownTime: 5
+  staminaCost: 20
+  animationName: 
+  isWarpSkill: 0
+  swordProjectilePrefab: {fileID: 0}
+  projectileSpeed: 40
+  maxProjectileDistance: 20
+  vfxPrefab: {fileID: 6167165751207411726, guid: 9ffd56eec3f545a42b1fb13ebd7c122c, type: 3}
+  damageMultiplier: 1
+  ghostMaterial: {fileID: 2100000, guid: 8ef09a273d2bbb746a7abd4e7234f456, type: 2}

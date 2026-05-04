@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: f978298fe2998b74480e81e925796890
+timeCreated: 1506852617
+licenseType: Store
+DefaultImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 101668
+  packageName: Heavy Sword
+  packageVersion: 1.1.1
+  assetPath: Assets/WeaponScene/Scene/scene.unity
+  uploadId: 226308

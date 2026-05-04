@@ -1,0 +1,75 @@
+= = = = = = = = = = = = = = = = = = 
+Placing a Sword in Your Scene
+= = = = = = = = = = = = = = = = = = 
+
+	There are two ways to place a sword from the "QMS - Fantasy Sword Pack FREE" into your game scene:
+
+	Method 1: Using the Example Scene
+
+	1. Open the Example Scene:
+		In the Project tab, navigate to the folder "\Quantum Mana Studio\QMS - Fantasy Sword Pack FREE\Scenes" and double-click the example scene file.
+
+	2. Copy a Sword:
+		In the Scene view, select the desired sword you want to place in your scene. Then, press Ctrl+C (Windows) or Command+C (Mac) to copy the sword.
+
+	3. Paste the Sword into Your Scene:
+		Open your game scene and select the game object where you want the sword to be placed (parent object). Press Ctrl+V (Windows) or Command+V (Mac) to paste the copied sword. This will create a copy of the sword as a child of the selected game object.
+
+	Method 2: Using Prefabs
+
+	1. Access the Prefabs Folder:
+		In the Project tab, navigate to the folder "\Quantum Mana Studio\QMS - Fantasy Sword Pack FREE\Prefabs".
+
+	2. Drag and Drop a Sword:
+		Click and hold on the desired sword prefab, then drag it directly into your game scene and release it where you want to place the sword.
+
+
+= = = = = = = = = = = = = = = = = = 
+Customizing Sword and Crystal Colors
+= = = = = = = = = = = = = = = = = = 
+
+	Note: This method requires an external image editing software like Adobe Photoshop.
+
+	1. Locate the Albedo Texture:
+		In the Project tab, navigate to the folder "\Quantum Mana Studio\QMS - Fantasy Sword Pack FREE\Textures". Locate the texture file labeled with "Albedo" (usually the main texture file for the sword).
+
+	2. Edit the Texture:
+		Open the Albedo texture file in your image editing software. Use the Hue and Saturation adjustments to modify the colors of the sword and crystals to your preference. Save the edited texture file.
+
+	3. Automatic Texture Update:
+		Switch back to the Unity Editor. The modified texture should automatically be reloaded within your scene.
+
+
+= = = = = = = = = = = = = = = = = = 
+Converting Built-in Shaders to URP or HDRP in Unity Editor
+= = = = = = = = = = = = = = = = = = 
+
+	Unity's transition from Built-in Rendering Pipeline (BRP) to Universal Render Pipeline (URP) and High Definition Render Pipeline (HDRP) offers enhanced graphics capabilities. However, this shift requires adapting your project's materials, which often rely on built-in shaders. Here's a breakdown of converting built-in shaders to URP or HDRP:
+
+	1. For Unity 2021.2.2 or older:
+
+		• Convert to URP:
+
+			Edit > Render Pipeline > Universal Render Pipeline > Upgrade Project Materials to UniversalRP Materials.
+
+		• Convert to HDRP:
+
+			Edit > Render Pipeline > Universal Render Pipeline > Upgrade Project Materials to High Definition Materials.
+
+	2. For Unity 2021.2.2 or higher:
+
+		Window > Rendering > Render Pipeline Converter
+
+	Some examples on YouTube.
+
+		• How to upgrade materials to URP in Unity 2021.2.2 (by MetalStorm Games channel):
+
+			https://www.youtube.com/watch?v=zQIosR0P-RE
+
+		• How to convert Unity Standard Materials to HDRP in Unity 2019.4.10f1 (by Polygonmaker channel):
+
+			https://www.youtube.com/watch?v=HpctUHPGqFI
+
+		• Fix pink textures in Unity 2024 (by Square One Tutorials channel):
+
+			https://www.youtube.com/watch?v=-KWjUD-PJbA

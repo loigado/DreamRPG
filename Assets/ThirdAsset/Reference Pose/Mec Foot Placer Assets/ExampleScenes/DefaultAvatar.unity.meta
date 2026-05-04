@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: b24c13b19b7a4b743a3ac6a86a22f90c
+timeCreated: 1431531823
+licenseType: Store
+DefaultImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 36961
+  packageName: Mec Foot Placer
+  packageVersion: 1.7
+  assetPath: Assets/Reference Pose/Mec Foot Placer Assets/ExampleScenes/DefaultAvatar.unity
+  uploadId: 354491

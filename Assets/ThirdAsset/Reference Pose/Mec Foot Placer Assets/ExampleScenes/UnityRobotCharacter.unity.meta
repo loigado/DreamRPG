@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: c2b2e87aa5f3b1545b60a73d450a6309
+timeCreated: 1431346623
+licenseType: Store
+DefaultImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 36961
+  packageName: Mec Foot Placer
+  packageVersion: 1.7
+  assetPath: Assets/Reference Pose/Mec Foot Placer Assets/ExampleScenes/UnityRobotCharacter.unity
+  uploadId: 354491

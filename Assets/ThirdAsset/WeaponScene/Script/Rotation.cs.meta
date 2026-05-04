@@ -1,0 +1,19 @@
+fileFormatVersion: 2
+guid: 7edb3dbac9bf04340a43bab1c4520dcf
+timeCreated: 1506860389
+licenseType: Store
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 101668
+  packageName: Heavy Sword
+  packageVersion: 1.1.1
+  assetPath: Assets/WeaponScene/Script/Rotation.cs
+  uploadId: 226308

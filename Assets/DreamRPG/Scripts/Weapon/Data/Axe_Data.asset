@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5103833351cc5fd44be6b3c5d9856334, type: 3}
+  m_Name: Axe_Data
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponData
+  WeaponName: Axe
+  WeaponAnimID: 2
+  Type: 0
+  Damage: 20
+  StaminaCost: 35
+  ComboAnimationNames:
+  - HeavyAttack1
+  - HeavyAttack2
+  - HeavyAttack3
+  DashAttackAnimName: AxeDashAttack
+  ArrowPrefab: {fileID: 0}
+  ShootForce: 25
+  EquipAnimName: DrawAxe
+  UnequipAnimName: UnDrawAxe
+  LocomotionStateName: GreatSword_Locomotion
+  JumpAnimName: GreatSword_Jump
+  RollAnimName: GreatSword_Roll
+  BlockAnimName: Axe_Block_Idle
+  ParryAnimName: Parry
+  GuardBreakAnimName: GuardBreak
+  BlockHitAnimName: Axe_Block_Impact
+  ShieldMaterial: {fileID: 2100000, guid: 265d14f0d8cc63a489d86039ddd4dc1e, type: 2}
+  skill1: {fileID: 11400000, guid: f2e587651b12e714e8d748cb685a176b, type: 2}
+  skill2: {fileID: 11400000, guid: bbb839dd514ab5646a00e572d0b91c5e, type: 2}
+  skill3: {fileID: 11400000, guid: a29eaba5cd4e0ae4690f80119b3bbdbd, type: 2}

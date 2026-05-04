@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: d843299d476e14641aac468c03429490
+timeCreated: 1506860045
+licenseType: Store
+NativeFormatImporter:
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 101668
+  packageName: Heavy Sword
+  packageVersion: 1.1.1
+  assetPath: Assets/WeaponScene/Materials/HandlePart2.mat
+  uploadId: 226308

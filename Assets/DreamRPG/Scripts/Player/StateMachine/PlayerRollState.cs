@@ -3,6 +3,8 @@ using UnityEngine;
 public class PlayerRollState : PlayerBaseState
 {
     private string currentAnimName;
+    public bool IsPerfectDodgeWindow { get; set; } 
+
     public PlayerRollState(PlayerStateMachine stateMachine) : base(stateMachine) {}
 
     public override void Enter()
@@ -20,10 +22,7 @@ public class PlayerRollState : PlayerBaseState
         currentAnimName = stateMachine.CurrentWeapon != null ? stateMachine.CurrentWeapon.RollAnimName : "Unarmed_Roll";
         stateMachine.Animator.CrossFadeInFixedTime(currentAnimName, 0.2f);
 
-        if (stateMachine.FootIK != null) stateMachine.FootIK.enabled = false;
-
-        // 🟢 FIX: Bật I-Frame (Bất tử) khi lộn — chuẩn AAA (Elden Ring, GoW, Sekiro)
-        stateMachine.EnableInvincibility();
+        IsPerfectDodgeWindow = false;
 
         stateMachine.InputReader.Skill1Event += OnSkill1;
         stateMachine.InputReader.Skill2Event += OnSkill2;
@@ -34,22 +33,70 @@ public class PlayerRollState : PlayerBaseState
     {
         ApplyGravity(deltaTime);
 
-        AnimatorStateInfo stateInfo = stateMachine.Animator.GetCurrentAnimatorStateInfo(0);
-        if (stateInfo.IsName(currentAnimName) && stateInfo.normalizedTime >= 0.9f)
+        // ====================================================================
+        // 🟢 NGÃ RẼ 1: PERFECT DODGE COUNTER (CHỈ DÀNH CHO KIẾM - HỆ LÔI)
+        // ====================================================================
+        if (stateMachine.HasPerformedPerfectDodge && stateMachine.InputReader.BufferedInput == BufferedCommand.Attack)
         {
-            stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+            WeaponData weapon = stateMachine.CurrentWeapon;
+            
+            // Kiểm tra xem vũ khí hiện tại có chữ "Kiếm" hoặc "Sword" trong tên không
+            if (weapon != null && (weapon.WeaponName.Contains("Sword") || weapon.WeaponName.Contains("Kiếm") || weapon.WeaponName.Contains("Lôi")))
+            {
+                if (stateMachine.Stamina.HasEnoughStamina(15f))
+                {
+                    stateMachine.InputReader.ConsumeBuffer();
+                    stateMachine.SwitchState(new PlayerCounterState(stateMachine)); 
+                    return;
+                }
+            }
+        }
+
+        AnimatorStateInfo stateInfo = stateMachine.Animator.GetCurrentAnimatorStateInfo(0);
+        if (stateInfo.IsName(currentAnimName))
+        {
+            // ====================================================================
+            // 🟢 NGÃ RẼ 2: ĐÂM TRƯỢT BÌNH THƯỜNG (DÀNH CHO MỌI VŨ KHÍ)
+            // ====================================================================
+            if (stateInfo.normalizedTime > 0.8f)
+            {
+                if (stateMachine.InputReader.BufferedInput == BufferedCommand.Attack)
+                {
+                    if (stateMachine.CurrentWeapon != null && stateMachine.Stamina.HasEnoughStamina(stateMachine.CurrentWeapon.StaminaCost))
+                    {
+                        stateMachine.InputReader.ConsumeBuffer();
+                        stateMachine.SwitchState(new PlayerAttackState(stateMachine, 0, false, true)); 
+                        return;
+                    }
+                }
+
+                if (stateMachine.InputReader.BufferedInput == BufferedCommand.Roll)
+                {
+                    if (stateMachine.Stamina.HasEnoughStamina(25f))
+                    {
+                        stateMachine.InputReader.ConsumeBuffer();
+                        stateMachine.SwitchState(new PlayerRollState(stateMachine));
+                        return;
+                    }
+                }
+            }
+
+            if (stateInfo.normalizedTime >= 0.9f)
+            {
+                stateMachine.SwitchState(new PlayerMovementState(stateMachine));
+            }
         }
     }
 
     public override void Exit()
     {
+        IsPerfectDodgeWindow = false; 
+        stateMachine.HasPerformedPerfectDodge = false; 
+
         stateMachine.Animator.applyRootMotion = false; 
         stateMachine.Animator.SetBool("isPerformingAction", false); 
-
-        // 🟢 FIX: Tắt I-Frame khi hết lộn
+        
         stateMachine.DisableInvincibility();
-
-        if (stateMachine.FootIK != null) stateMachine.FootIK.enabled = true;
 
         stateMachine.InputReader.Skill1Event -= OnSkill1;
         stateMachine.InputReader.Skill2Event -= OnSkill2;

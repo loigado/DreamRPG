@@ -1,10 +1,6 @@
 using UnityEngine;
 using UnityEngine.AI;
 
-/// <summary>
-/// EnemyChaseState — Rượt đuổi Player.
-/// Fix: Token system thực sự hoạt động + Gap Closer transition.
-/// </summary>
 public class EnemyChaseState : EnemyState
 {
     private float pathUpdateTimer;
@@ -16,17 +12,15 @@ public class EnemyChaseState : EnemyState
     {
         stateMachine.EnableAgentMode();
         pathUpdateTimer = 0f;
-        
-        // Cooldown phải được lấy từ thời gian thực (giả lập) hoặc ít nhất random để không trigger lập tức
         gapCloserCooldownTimer = Random.Range(1f, 3f);
-
-        // Bật aggro
         stateMachine.HasAggro = true;
 
         if (stateMachine.Agent.isActiveAndEnabled && stateMachine.Agent.isOnNavMesh)
         {
             stateMachine.Agent.isStopped = false;
-            stateMachine.Agent.speed = stateMachine.Stats.moveSpeed;
+            // 🟢 PHASE 2: Tăng tốc độ chạy/truy đuổi lên 50%
+            float speedMult = (stateMachine.Stats.isMiniBoss && stateMachine.IsPhase2) ? 1.5f : 1f;
+            stateMachine.Agent.speed = stateMachine.Stats.moveSpeed * speedMult;
         }
     }
 
@@ -34,57 +28,97 @@ public class EnemyChaseState : EnemyState
     {
         if (stateMachine.PlayerTarget == null) return;
 
-        float distanceToPlayer = Vector3.Distance(stateMachine.transform.position,
-                                                   stateMachine.PlayerTarget.position)
-                                 - stateMachine.Controller.radius;
-
-        // Cập nhật vị trí đã biết
+        float distanceToPlayer = Vector3.Distance(stateMachine.transform.position, stateMachine.PlayerTarget.position) - stateMachine.Controller.radius;
         stateMachine.LastKnownPlayerPos = stateMachine.PlayerTarget.position;
 
-        // ── 1. MẤT AGGRO ────────────────────────────────────────────
-        // Nếu quái bị tấn công, aggroMemoryTimer sẽ được bơm đầy (VD: 5s).
-        // Trong 5s đó dù bạn có đứng xa 30m nó vẫn sẽ rượt tới cùng!
-        // Nó chỉ bỏ cuộc khi stateMachine tự động đặt HasAggro = false (hết thời gian nhớ)
+        // ── 1. KIỂM TRA AGGRO ─────────────────────────
         if (!stateMachine.HasAggro || distanceToPlayer >= stateMachine.Stats.dropAggroRange * 1.5f)
         {
             stateMachine.HasAggro = false;
-            stateMachine.SwitchState(new EnemyIdleState(stateMachine));
+            stateMachine.SwitchState(stateMachine.IdleState);
             return;
         }
 
-        // ── 2. ĐỦ GẦN → STRAFE HOẶC ATTACK ─────────────────────────
-        // Sửa lỗi đánh hụt: đợi vào thật sát (bằng đúng attackRange) mới tung đòn
-        if (distanceToPlayer <= stateMachine.Stats.attackRange)
-        {
-            // Xin Token ngay khi chạy tới — "Running Attack" giống GoW
-            bool hasToken = AIDirector.Instance != null
-                && AIDirector.Instance.RequestAttackToken(stateMachine);
+        Vector3 dirToPlayer = (stateMachine.PlayerTarget.position - stateMachine.transform.position).normalized;
+        dirToPlayer.y = 0f;
+        float angleToPlayer = Vector3.Angle(stateMachine.transform.forward, dirToPlayer);
 
-            if (hasToken)
-            {
-                stateMachine.SwitchState(new EnemyAttackState(stateMachine));
-            }
-            else
-            {
-                stateMachine.SwitchState(new EnemyStrafeState(stateMachine));
-            }
-            return;
-        }
+        // Blindspot Punishment đã chuyển sang Radar ngầm (EnemyStateMachine.Update)
+        // Tanker sẽ không vào ChaseState — đã redirect sang IntimidationState
 
-        // ── 3. GAP CLOSER ────────────────────────────────────────────
-        gapCloserCooldownTimer -= deltaTime;
-        if (distanceToPlayer >= stateMachine.Stats.gapCloserRange && gapCloserCooldownTimer <= 0f)
+        // ── 2B. MINI-BOSS PHÓNG SÓNG SÉT TẦM XA (CHASE) ─────────
+        // Cập nhật: Dùng rangedProjectilePrefab (vì đã đổi sang gọi sấm sét)
+        if (stateMachine.Stats.isMiniBoss && stateMachine.Stats.rangedProjectilePrefab != null 
+            && stateMachine.SkillCooldownTimer <= 0f && !stateMachine.Stats.isRangedEnemy)
         {
-            // Chỉ gap close khi on-screen (GoW rule)
-            if (AIDirector.Instance != null &&
-                AIDirector.Instance.IsEnemyOnScreen(stateMachine.transform.position))
+            float minRangedDist = stateMachine.Stats.attackRange + 2f; // Vùng an toàn cận chiến
+            // Cho phép bắn xa tới 20m để chống lại cung thủ
+            if (distanceToPlayer > minRangedDist && distanceToPlayer <= 20f && angleToPlayer <= 45f)
             {
-                stateMachine.SwitchState(new EnemyGapCloserState(stateMachine));
+                stateMachine.SkillCooldownTimer = 6f; // Cooldown 6 giây để Boss không spam
+                stateMachine.SwitchState(stateMachine.RangeAttackState);
                 return;
             }
         }
 
-        // ── 4. NAVIGATION ────────────────────────────────────────────
+        // ── 3. ĐÁNH CẬN CHIẾN BÌNH THƯỜNG ─────────────────────────
+        if (distanceToPlayer <= stateMachine.Stats.attackRange)
+        {
+            // 🟢 KHÓA GÓC ĐÁNH TOÀN DIỆN CHO TẤT CẢ QUÁI
+            if (angleToPlayer > 60f)
+            {
+                // Chưa quay mặt tới nơi -> Cấm đánh, ép về Strafe để vặn sườn tiếp!
+                stateMachine.SwitchState(stateMachine.StrafeState);
+                return;
+            }
+
+            // 🟢 MINI-BOSS: Phải chờ cooldown giữa các combo, không chém liên tục
+            if (stateMachine.Stats.isMiniBoss && stateMachine.SkillCooldownTimer > 0f)
+            {
+                stateMachine.SwitchState(stateMachine.StrafeState);
+                return;
+            }
+
+            bool hasToken = AIDirector.Instance != null && AIDirector.Instance.RequestAttackToken(stateMachine);
+            // Mini-Boss bỏ qua Token system
+            if (stateMachine.Stats.isMiniBoss) hasToken = true;
+
+            if (hasToken)
+            {
+                if (stateMachine.Stats.isRangedEnemy)
+                    stateMachine.SwitchState(stateMachine.RangeAttackState);
+                else
+                {
+                    // 🟢 Boss cận chiến: Set cooldown sau khi chém để tạo nhịp God of War
+                    if (stateMachine.Stats.isMiniBoss)
+                    {
+                        // Phase 2: Nhịp tấn công dồn dập hơn (chỉ nghỉ 1-1.5s thay vì 1.5-3s)
+                        if (stateMachine.IsPhase2) stateMachine.SkillCooldownTimer = Random.Range(1.0f, 1.5f);
+                        else stateMachine.SkillCooldownTimer = Random.Range(1.5f, 3f);
+                    }
+                    stateMachine.AttackState.Setup(-1);
+                    stateMachine.SwitchState(stateMachine.AttackState);
+                }
+            }
+            else
+            {
+                stateMachine.SwitchState(stateMachine.StrafeState);
+            }
+            return;
+        }
+
+        // ── 4. GAP CLOSER (CHỈ DÀNH CHO LÍNH THƯỜNG) ─────
+        gapCloserCooldownTimer -= deltaTime;
+        if (distanceToPlayer >= stateMachine.Stats.gapCloserRange && gapCloserCooldownTimer <= 0f)
+        {
+            if (AIDirector.Instance != null && AIDirector.Instance.IsEnemyOnScreen(stateMachine.transform.position))
+            {
+                stateMachine.SwitchState(stateMachine.GapCloserState);
+                return;
+            }
+        }
+
+        // ── 5. NAVIGATION (CHỈ CẬP NHẬT ĐIỂM ĐẾN, CẤM XOAY CHIÊU) ───
         if (stateMachine.Agent.isActiveAndEnabled && stateMachine.Agent.isOnNavMesh)
         {
             pathUpdateTimer -= deltaTime;
@@ -92,22 +126,6 @@ public class EnemyChaseState : EnemyState
             {
                 stateMachine.Agent.SetDestination(stateMachine.PlayerTarget.position);
                 pathUpdateTimer = 0.2f;
-            }
-
-            // Angular Momentum
-            Vector3 desiredDir = stateMachine.Agent.desiredVelocity;
-            desiredDir.y = 0;
-
-            if (desiredDir.sqrMagnitude > 0.1f)
-            {
-                float currentSpeed = stateMachine.Agent.velocity.magnitude;
-                float momentumFactor = Mathf.Clamp(
-                    1f - (currentSpeed / stateMachine.Stats.moveSpeed), 0.3f, 1f);
-
-                Quaternion targetRot = Quaternion.LookRotation(desiredDir);
-                stateMachine.transform.rotation = Quaternion.Slerp(
-                    stateMachine.transform.rotation, targetRot,
-                    stateMachine.Stats.turnSpeed * momentumFactor * deltaTime * 0.01f);
             }
         }
     }

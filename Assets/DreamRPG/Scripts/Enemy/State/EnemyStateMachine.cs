@@ -1,25 +1,29 @@
 using UnityEngine;
 using UnityEngine.AI;
 
-/// <summary>
-/// EnemyStateMachine — Bộ não trung tâm của quái vật (AAA Standard).
-///
-/// Trách nhiệm:
-///   • Quản lý State Machine
-///   • Xử lý di chuyển tập trung (HandleMovement)
-///   • Tính Separation Force (Boids)
-///   • Quản lý NavMeshObstacle Carving (state-driven)
-///   • Lắng nghe sự kiện Damage/Death từ EnemyHealth
-///   • Tự đăng ký vào AIDirector
-///   • Quản lý Aggro Memory
-/// </summary>
+// 🟢 ĐỊNH NGHĨA CÁC LOẠI ÁM HIỆU
+public enum EnemyCalloutType
+{
+    RangedWarning, // "Dosho!" - Dạt ra cho tao bắn!
+    ShieldWall,    // Gọi đồng minh nấp sau khiên
+    FlankAttack    // Bao vây đánh úp
+}
+
 [RequireComponent(typeof(NavMeshAgent), typeof(Animator), typeof(CharacterController))]
 [RequireComponent(typeof(NavMeshObstacle))]
 public class EnemyStateMachine : MonoBehaviour, IDamageable
 {
+    // === 🟢 SYNERGY / CALLOUT SYSTEM ===
+    public static event System.Action<EnemyStateMachine, EnemyCalloutType> OnEnemyCallout;
+
     [Header("Core Data")]
     public EnemyStatsSO Stats;
     public Transform PlayerTarget;
+
+    [Header("Skills & VFX")]
+    public Transform skillOriginPoint; 
+    [Tooltip("Vị trí xương miệng/đầu của quái vật")]
+    public Transform mouthPoint;       
 
     // === COMPONENTS ===
     public NavMeshAgent        Agent      { get; private set; }
@@ -28,56 +32,82 @@ public class EnemyStateMachine : MonoBehaviour, IDamageable
     public EnemyHealth         Health     { get; private set; }
     public NavMeshObstacle     Obstacle   { get; private set; }
 
-    // === STATE ===
+    // === STATE CACHING ===
     public EnemyState currentState { get; private set; }
-    public Vector3 SpawnPosition   { get; private set; }
+    public EnemyIdleState       IdleState       { get; private set; }
+    public EnemyPatrolState     PatrolState     { get; private set; }
+    public EnemyChaseState      ChaseState      { get; private set; }
+    public EnemyStrafeState     StrafeState     { get; private set; }
+    public EnemyAttackState     AttackState     { get; private set; }
+    public EnemyDodgeState      DodgeState      { get; private set; }
+    public EnemyBlockState      BlockState      { get; private set; }
+    public EnemyGapCloserState  GapCloserState  { get; private set; }
+    public EnemyDeathState      DeathState      { get; private set; }
+    public EnemyRangeAttackState RangeAttackState { get; private set; }
+    public EnemyHitReactionState HitReactionState { get; private set; }
+    public EnemyClearPathState  ClearPathState  { get; private set; }
+    public EnemyParriedState    ParriedState    { get; private set; }
+    public BossPhaseTransitionState PhaseTransitionState { get; private set; }
 
-    // === MOVEMENT ===
+    // === DATA ===
+    public Vector3 SpawnPosition   { get; private set; }
+    public float SkillCooldownTimer { get; set; } = 0f;
+    public float DodgeCooldownTimer { get; set; } = 0f;
+    public float MeleeBurstCooldownTimer { get; set; } = 0f;
+    public bool isTurningInPlace { get; set; } = false;
     public float   VerticalVelocity { get; private set; }
     public Vector3 ManualVelocity   { get; set; }
     public Vector3 LookAtTarget     { get; set; }
-
-    // === PLAYER AWARENESS ===
     public bool IsPlayerMoving { get; private set; }
+    public bool IsDodging { get; set; } = false;
+    public bool IsPhase2 { get; set; } = false;
     private Vector3 lastPlayerPos;
+    private float lastRotationY;
 
-    // === AGGRO MEMORY ===
-    /// <summary>Quái đang aggro Player (nhớ vị trí cuối cùng dù mất tầm nhìn)</summary>
-    public bool HasAggro          { get; set; }
-    /// <summary>Vị trí cuối cùng nhìn thấy Player</summary>
-    public Vector3 LastKnownPlayerPos { get; set; }
-    private float aggroMemoryTimer;
-
-    // === SLOT SYSTEM ===
-    public int ReservedSlotIndex { get; set; } = -1;
-
-    /// <summary>Quái đang giữ Attack Token? Dùng để DeathState chỉ release khi thật sự có token.</summary>
-    public bool IsHoldingAttackToken { get; set; } = false;
-
-    // === SEPARATION (Boids — NonAlloc cache) ===
-    private readonly Collider[] separationBuffer = new Collider[20];
-
-    // === CARVING ===
-    private bool _isInObstacleMode = false;
-
+    // === SEKIRO REACTIVE AI ===
+    public bool IsPlayerBlocking { get; private set; }
+    public bool IsPlayerAttacking { get; private set; }
+    public float PlayerGuardDuration { get; private set; }
+    
+    // === GOT TURN-STEALING ===
+    public int ConsecutiveHitsTaken { get; private set; } = 0;
+    private float lastHitTime = 0f;
+    
     // =========================================================
-    // PRIORITY
+    // === AGGRO & SLOT PROPERTY ===
     // =========================================================
-    /// <summary>
-    /// Số nhỏ = ưu tiên cao (đánh trước, đi trước).
-    /// Gốc = Stats.priorityId × 1000 + khoảng cách × 10.
-    /// </summary>
-    public int GetPriority()
-    {
-        float dist = PlayerTarget != null
-            ? Vector3.Distance(transform.position, PlayerTarget.position)
-            : 999f;
-        return Stats.priorityId * 1000 + Mathf.RoundToInt(dist * 10f);
+    private bool _hasAggro;
+    public bool HasAggro          
+    { 
+        get => _hasAggro;
+        set 
+        {
+            // Nếu LẦN ĐẦU TIÊN vào combat (chuyển từ false sang true) VÀ đây là Boss
+            if (value == true && _hasAggro == false && Stats != null && Stats.isMiniBoss)
+            {
+                if (BossHUD.Instance != null && Health != null)
+                {
+                    string nameToShow = string.IsNullOrEmpty(Stats.bossName) ? gameObject.name : Stats.bossName;
+                    BossHUD.Instance.SetupBossHUD(Health, nameToShow); 
+                }
+            }
+            _hasAggro = value;
+        }
     }
 
-    // =========================================================
-    // LIFECYCLE
-    // =========================================================
+    public Vector3 LastKnownPlayerPos { get; set; }
+    private float aggroMemoryTimer;
+    public int ReservedSlotIndex { get; set; } = -1;
+    public bool IsHoldingAttackToken { get; set; } = false;
+
+    private readonly Collider[] separationBuffer = new Collider[20];
+    private bool _isInObstacleMode = false;
+
+    public int GetPriority()
+    {
+        float dist = PlayerTarget != null ? Vector3.Distance(transform.position, PlayerTarget.position) : 999f;
+        return Stats.priorityId * 1000 + Mathf.RoundToInt(dist * 10f);
+    }
 
     private void Awake()
     {
@@ -89,9 +119,61 @@ public class EnemyStateMachine : MonoBehaviour, IDamageable
 
         Agent.updateRotation = false;
         Agent.updatePosition = false;
-
         Obstacle.carving = false;
         Obstacle.enabled = false;
+
+        IdleState       = new EnemyIdleState(this);
+        PatrolState     = new EnemyPatrolState(this);
+        ChaseState      = new EnemyChaseState(this);
+        StrafeState     = new EnemyStrafeState(this);
+        AttackState     = new EnemyAttackState(this);
+        DodgeState      = new EnemyDodgeState(this);
+        BlockState      = new EnemyBlockState(this);
+        GapCloserState  = new EnemyGapCloserState(this);
+        DeathState      = new EnemyDeathState(this);
+        RangeAttackState = new EnemyRangeAttackState(this);
+        HitReactionState = new EnemyHitReactionState(this);
+        ClearPathState  = new EnemyClearPathState(this);
+        ParriedState    = new EnemyParriedState(this);
+        PhaseTransitionState = new BossPhaseTransitionState(this);
+    }
+
+    private void OnEnable()
+    {
+        if (Health != null)
+        {
+            Health.OnDamaged += OnDamaged;
+            Health.OnDeath   += OnDeath;
+            Health.OnBlocked += OnBlockedAttack;
+            Health.OnPostureBroken += TriggerParryStagger;
+        }
+
+        if (currentState != null)
+        {
+            SwitchState(IdleState);
+        }
+
+        if (AIDirector.Instance != null)
+        {
+            AIDirector.Instance.RegisterEnemy(this);
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (Health != null)
+        {
+            Health.OnDamaged -= OnDamaged;
+            Health.OnDeath   -= OnDeath;
+            Health.OnBlocked -= OnBlockedAttack;
+            Health.OnPostureBroken -= TriggerParryStagger;
+        }
+
+        if (AIDirector.Instance != null)
+        {
+            AIDirector.Instance.ReleaseToken(this);
+            AIDirector.Instance.UnregisterEnemy(this);
+        }
     }
 
     private void Start()
@@ -102,209 +184,318 @@ public class EnemyStateMachine : MonoBehaviour, IDamageable
             if (go != null) PlayerTarget = go.transform;
         }
         if (PlayerTarget != null) lastPlayerPos = PlayerTarget.position;
-
         SpawnPosition = transform.position;
 
-        // ĐĂng ký vào AIDirector
-        if (AIDirector.Instance != null)
-            AIDirector.Instance.RegisterEnemy(this);
+        OnEnemyCallout += HandleAllyCallout;
 
-        // Lắng nghe sự kiện từ EnemyHealth
-        if (Health != null)
-        {
-            Health.OnDamaged += OnDamaged;
-            Health.OnDeath   += OnDeath;
-            Health.OnBlocked += OnBlockedAttack;
-        }
-
-        SwitchState(new EnemyIdleState(this));
+        if (currentState == null) SwitchState(IdleState);
+        lastRotationY = transform.eulerAngles.y;
     }
-
+    
     private void OnDestroy()
     {
-        // Giải phóng Token nếu đang cầm mà bị Destroy đột ngột
-        if (AIDirector.Instance != null)
-        {
-            AIDirector.Instance.ReleaseToken(this);
-            AIDirector.Instance.UnregisterEnemy(this);
-        }
-
         if (EnemySlotManager.Instance != null && ReservedSlotIndex >= 0)
             EnemySlotManager.Instance.ReleaseSlot(ReservedSlotIndex);
 
-        if (Health != null)
-        {
-            Health.OnDamaged -= OnDamaged;
-            Health.OnDeath   -= OnDeath;
-            Health.OnBlocked -= OnBlockedAttack;
-        }
+        OnEnemyCallout -= HandleAllyCallout;
     }
 
     private void Update()
     {
-        // 🧊 FROZEN: Khi bị đóng băng, dừng hoàn toàn mọi logic AI
-        // Quái đứng khựng như tượng băng, không tick state, không di chuyển
         if (Health != null && Health.isFrozen)
         {
             ManualVelocity = Vector3.zero;
             return;
         }
+        if (SkillCooldownTimer > 0f) SkillCooldownTimer -= Time.deltaTime;
+        if (DodgeCooldownTimer > 0f) DodgeCooldownTimer -= Time.deltaTime;
+        if (MeleeBurstCooldownTimer > 0f) MeleeBurstCooldownTimer -= Time.deltaTime;
 
+        UpdateReactiveAI();
         currentState?.Tick(Time.deltaTime);
         HandleMovement();
         UpdatePlayerAwareness();
         UpdateAggroMemory();
     }
 
-    // =========================================================
-    // STATE MACHINE
-    // =========================================================
+    public void BroadcastCallout(EnemyCalloutType type)
+    {
+        Debug.Log($"<color=cyan>📢 [SYNERGY] {gameObject.name} hô to: {type}!</color>");
+        OnEnemyCallout?.Invoke(this, type);
+    }
 
+    private void HandleAllyCallout(EnemyStateMachine caller, EnemyCalloutType type)
+    {
+        if (caller == this || Health == null || Health.IsDead || Health.isFrozen) return;
+        if (currentState == HitReactionState || currentState == DeathState || currentState == ClearPathState) return;
+        if (PlayerTarget == null) return;
+
+        float distToCaller = Vector3.Distance(transform.position, caller.transform.position);
+        if (distToCaller > 15f) return;
+
+        if (type == EnemyCalloutType.RangedWarning)
+        {
+            Vector3 dirToPlayer = (PlayerTarget.position - caller.transform.position).normalized;
+            Vector3 dirToMe = (transform.position - caller.transform.position).normalized;
+            float angle = Vector3.Angle(dirToPlayer, dirToMe);
+            
+            float myDistToCaller = Vector3.Distance(transform.position, caller.transform.position);
+            float playerDistToCaller = Vector3.Distance(PlayerTarget.position, caller.transform.position);
+
+            if (angle < 35f && myDistToCaller < playerDistToCaller)
+            {
+                Debug.Log($"<color=orange>⚠️ {gameObject.name} dạt sang bên để nhường đường cho đồng đội!</color>");
+                ClearPathState.Setup(caller.transform.position, PlayerTarget.position);
+                SwitchState(ClearPathState);
+            }
+        }
+    }
+
+    private void UpdateReactiveAI()
+    {
+        if (PlayerTarget != null)
+        {
+            var playerState = PlayerTarget.GetComponentInParent<PlayerStateMachine>();
+            if (playerState != null && playerState.currentState != null)
+            {
+                IsPlayerBlocking = playerState.currentState is PlayerBlockState || playerState.currentState is PlayerParryDecisionState;
+                IsPlayerAttacking = playerState.currentState is PlayerAttackState || playerState.currentState is PlayerParryAttackState;
+
+                if (IsPlayerBlocking) PlayerGuardDuration += Time.deltaTime;
+                else PlayerGuardDuration = 0f;
+            }
+        }
+    }
+
+    // =========================================================
+    // 🟢 CẬP NHẬT: LỚP BẢO VỆ KHI CHUYỂN TRẠNG THÁI
+    // =========================================================
     public void SwitchState(EnemyState newState)
     {
         currentState?.Exit();
         currentState = newState;
         currentState?.Enter();
-    }
 
-    // =========================================================
-    // DAMAGE / DEATH EVENT HANDLERS
-    // =========================================================
-
-    public void TakeDamage(float damage, Vector3 attackerPosition)
-    {
-        // Forward sát thương thẳng vào Health Component (giống hệt PlayerStateMachine)
-        if (Health != null)
+        // Nếu bất kỳ logic AI nào chủ động ép quái vào trạng thái tấn công/truy đuổi người chơi -> Bật Aggro UI lập tức
+        if (newState == ChaseState || newState == AttackState || newState == RangeAttackState || newState == GapCloserState)
         {
-            Health.TakeDamage(damage, attackerPosition);
-        }
-        else
-        {
-            Debug.LogError($"<color=red>LỖI: Chưa kéo file EnemyHealth vào ô 'Health' trong Inspector của con quái {gameObject.name}!</color>");
+            HasAggro = true;
         }
     }
+
+    public void TakeDamage(float damage, Vector3 attackerPosition, bool isHeavy = false) { if (Health != null) Health.TakeDamage(damage, attackerPosition, isHeavy); }
 
     private void OnDamaged(float damage, Vector3 attackerPos, bool isHeavy)
     {
-        // Đang chết thì bỏ qua
-        if (currentState is EnemyDeathState) return;
-
-        // Bật aggro ngay lập tức
+        if (currentState == DeathState) return;
+        
+        if (Stats.isMiniBoss && !IsPhase2)
+        {
+            float healthPercent = Health.Health / Health.MaxHealth; 
+            if (healthPercent <= 0.5f)
+            {
+                SwitchState(PhaseTransitionState);
+                return; 
+            }
+        }
+        
         HasAggro = true;
         aggroMemoryTimer = Stats.aggroMemoryDuration;
         LastKnownPlayerPos = attackerPos;
 
-        // --- SUPER ARMOR (Poise) ---
-        if (currentState is EnemyAttackState && !isHeavy)
-        {
-            return;
-        }
+        // =========================================================
+        // TURN-STEALING (CHỐNG STUNLOCK) & HIT TRACKING
+        // =========================================================
+        if (Time.time - lastHitTime > 1.5f) ConsecutiveHitsTaken = 0; 
+        ConsecutiveHitsTaken++;
+        lastHitTime = Time.time;
 
-        // --- PHẢN ỨNG MŨI TÊN (Ranged Reaction) ---
-        // Nếu bị bắn từ xa (khoảng cách > attackRange + 3) VÀ đòn nhẹ
-        // → quái có cơ hội Dodge/Block thay vì cứ đứng ăn đòn
-        float distToAttacker = Vector3.Distance(transform.position, attackerPos);
-        bool isRangedHit = distToAttacker > Stats.attackRange + 3f;
-        
-        if (isRangedHit && !isHeavy)
+        if (Stats.isMiniBoss)
         {
-            bool canReact = (currentState is EnemyIdleState)
-                         || (currentState is EnemyStrafeState)
-                         || (currentState is EnemyChaseState)
-                         || (currentState is EnemyHitReactionState);
+            // 1. Kiểm tra Super Armor lúc ra chiêu
+            bool hasSuperArmor = (currentState == AttackState && !AttackState.IsInRecovery) || 
+                                 (currentState == BlockState) ||
+                                 (currentState == GapCloserState) ||
+                                 (currentState == RangeAttackState) ||
+                                 (currentState == PhaseTransitionState);
 
-            if (canReact)
+            if (hasSuperArmor) return; 
+
+            if (currentState == IdleState)
             {
-                float rand = Random.Range(0f, 100f);
+                SwitchState(ChaseState);
+                return;
+            }
+
+            // 🟢 MỚI: Xử lý né đòn tầm xa cho Boss (trước khi lỳ đòn với Light Attack)
+            float dist = Vector3.Distance(transform.position, attackerPos);
+            if (dist > Stats.attackRange + 3f && !isHeavy)
+            {
+                bool canReact = (currentState == StrafeState) || (currentState == ChaseState);
+                if (canReact)
+                {
+                    float rand = Random.Range(0f, 100f);
+                    // Boss rất nhạy bén với đòn tầm xa, tăng tỷ lệ né
+                    if (rand <= Stats.dodgeChance + 40f && DodgeCooldownTimer <= 0f) 
+                    {
+                        DodgeCooldownTimer = 2.5f; // Né nhanh hơn lính thường
+                        DodgeState.Setup(attackerPos);
+                        SwitchState(DodgeState);
+                        return;
+                    }
+                }
+            }
+
+            // 2. Nếu là đòn nhẹ (Light Attack), Boss hoàn toàn lỳ đòn, KHÔNG bị flinch!
+            if (!isHeavy)
+            {
+                // Mặc dù lỳ đòn, nhưng nếu bị chém trúng quá nhiều (5 hit), Boss sẽ dùng chiêu giải vây
+                if (ConsecutiveHitsTaken >= 5)
+                {
+                    ConsecutiveHitsTaken = 0; 
+                    if (MeleeBurstCooldownTimer <= 0f)
+                    {
+                        SwitchState(RangeAttackState);
+                        return;
+                    }
+                    float rand = Random.Range(0f, 100f);
+                    if (rand <= Stats.dodgeChance + 20f && DodgeCooldownTimer <= 0f)
+                    {
+                        DodgeCooldownTimer = 4f;
+                        DodgeState.Setup(attackerPos);
+                        SwitchState(DodgeState);
+                        return;
+                    }
+                    else if (Stats.maxGuard > 0f)
+                    {
+                        SwitchState(BlockState);
+                        return;
+                    }
+                }
                 
-                // Dodge né mũi tên (tỷ lệ = dodgeChance)
-                if (rand <= Stats.dodgeChance)
+                // Trả về luôn, KHÔNG nhảy xuống dòng SwitchState(HitReactionState) bên dưới
+                return; 
+            }
+        }
+        else // Quái thường
+        {
+            if (currentState == AttackState && !isHeavy)
+            {
+                if (AttackState.CurrentGlint == AttackGlint.Blue || AttackState.CurrentGlint == AttackGlint.Red) return; 
+            }
+
+            if (ConsecutiveHitsTaken >= 3)
+            {
+                ConsecutiveHitsTaken = 0; 
+                float rand = Random.Range(0f, 100f);
+                if (rand <= Stats.dodgeChance + 20f && DodgeCooldownTimer <= 0f)
                 {
-                    SwitchState(new EnemyDodgeState(this, attackerPos));
+                    DodgeCooldownTimer = 4f;
+                    DodgeState.Setup(attackerPos);
+                    SwitchState(DodgeState);
                     return;
                 }
-                // Block giơ khiên đỡ mũi tên tiếp theo (25%)
-                else if (rand <= Stats.dodgeChance + 25f)
+                else if (Stats.maxGuard > 0f)
                 {
-                    SwitchState(new EnemyBlockState(this));
+                    SwitchState(BlockState);
                     return;
                 }
-                // Còn lại: ăn đòn bình thường rồi lao tới (GapCloser)
+            }
+
+            float dist = Vector3.Distance(transform.position, attackerPos);
+            if (dist > Stats.attackRange + 3f && !isHeavy)
+            {
+                bool canReact = (currentState == IdleState) || (currentState == StrafeState) || (currentState == ChaseState);
+                if (canReact)
+                {
+                    float rand = Random.Range(0f, 100f);
+                    if (rand <= Stats.dodgeChance && DodgeCooldownTimer <= 0f) 
+                    {
+                        DodgeCooldownTimer = 4f; 
+                        DodgeState.Setup(attackerPos);
+                        SwitchState(DodgeState);
+                        return;
+                    }
+                }
             }
         }
 
-        // Chuyển sang HitReaction — cho phép re-enter để reset timer (GoW standard)
-        SwitchState(new EnemyHitReactionState(this, attackerPos, isHeavy));
+        HitReactionState.Setup(attackerPos, isHeavy);
+        SwitchState(HitReactionState);
     }
-
-    private void OnDeath()
+    
+    public void TriggerParryStagger()
     {
-        SwitchState(new EnemyDeathState(this));
-    }
-
-    private void OnBlockedAttack(Vector3 attackerPos)
-    {
-        // Nếu Player chém trúng khi quái đang ở BlockState
-        if (currentState is EnemyBlockState blockState)
+        if (currentState != DeathState)
         {
-            blockState.OnImpact();
+            SwitchState(ParriedState);
         }
     }
 
-    /// <summary>
-    /// Player gọi khi Kratos vung rìu gần quái → quái có thể Dodge.
-    /// </summary>
+    private void OnDeath() { SwitchState(DeathState); }
+    private void OnBlockedAttack(Vector3 attackerPos) { if (currentState == BlockState) BlockState.OnImpact(); }
+
+    private float lastReactToPlayerAttackTime = 0f;
+
     public void NotifyPlayerAttackNearby(Vector3 attackerPos)
     {
         if (Health == null || Health.IsDead || Health.isFrozen || Health.isParalyzed) return;
-        if (currentState is EnemyDeathState || currentState is EnemyHitReactionState) return;
+        if (currentState == DeathState) return; 
+
+        if (Time.time - lastReactToPlayerAttackTime < 2.0f) return;
+        lastReactToPlayerAttackTime = Time.time;
 
         float dist = Vector3.Distance(transform.position, attackerPos);
-        if (dist > Stats.attackRange + 2.5f) return;
+        float threshold = Stats.attackRange + 1.5f; 
+        if (dist > threshold) return;
 
-        bool canReact = (currentState is EnemyIdleState)
-                     || (currentState is EnemyStrafeState)
-                     || (currentState is EnemyChaseState);
+        bool canReact = (currentState == IdleState) || (currentState == StrafeState) || 
+                        (currentState == ChaseState) || (currentState == GapCloserState);
 
         if (canReact)
         {
-            float rand = Random.Range(0f, 100f);
-            
-            // Nếu có dodgeChance trong Stats thì dùng, tạm thời mình lấy Random
-            if (rand <= Stats.dodgeChance)
+            float rand = Random.Range(0f, 100f); 
+
+            if (rand <= (Stats.dodgeChance / 2f) && DodgeCooldownTimer <= 0f) 
             {
-                SwitchState(new EnemyDodgeState(this, attackerPos));
+                DodgeCooldownTimer = 4f; 
+                DodgeState.Setup(attackerPos);
+                SwitchState(DodgeState);
+                return;
             }
-            // Giả sử có thêm 25% tỷ lệ giơ khiên đỡ đòn (Block)
-            else if (rand <= Stats.dodgeChance + 25f)
+            else if (Stats != null && Stats.maxGuard > 0f && rand <= (Stats.dodgeChance / 2f) + 15f)
             {
-                SwitchState(new EnemyBlockState(this));
+                SwitchState(BlockState);
             }
         }
     }
-
-    // =========================================================
-    // PLAYER AWARENESS
-    // =========================================================
 
     private void UpdatePlayerAwareness()
     {
         if (PlayerTarget == null) return;
-
         float playerSpeed = Vector3.Distance(PlayerTarget.position, lastPlayerPos) / Time.deltaTime;
         IsPlayerMoving = playerSpeed > 1.5f;
         lastPlayerPos = PlayerTarget.position;
     }
 
     // =========================================================
-    // AGGRO MEMORY
+    // 🟢 CẬP NHẬT: KÍCH HOẠT AGGRO BẰNG TẦM NHÌN (SIGHT DETECTION)
     // =========================================================
-
     private void UpdateAggroMemory()
     {
-        if (!HasAggro) return;
+        // Nếu chưa có Aggro mà Kratos lọt vào tầm nhìn -> Kích hoạt Aggro UI ngay lập tức!
+        if (!HasAggro)
+        {
+            if (PlayerTarget != null && CanSeePlayer())
+            {
+                HasAggro = true;
+                aggroMemoryTimer = Stats.aggroMemoryDuration;
+                LastKnownPlayerPos = PlayerTarget.position;
+            }
+            return;
+        }
 
-        // Nếu đang thấy Player → reset timer
+        // Logic đếm ngược bộ nhớ Aggro cũ giữ nguyên
         if (PlayerTarget != null && CanSeePlayer())
         {
             aggroMemoryTimer = Stats.aggroMemoryDuration;
@@ -313,40 +504,28 @@ public class EnemyStateMachine : MonoBehaviour, IDamageable
         else
         {
             aggroMemoryTimer -= Time.deltaTime;
-            if (aggroMemoryTimer <= 0f)
-            {
-                HasAggro = false;
-            }
+            if (aggroMemoryTimer <= 0f) HasAggro = false;
         }
     }
 
-    /// <summary>Check nhanh xem có đang thấy Player không (dùng cho aggro memory).</summary>
     private bool CanSeePlayer()
     {
         if (PlayerTarget == null) return false;
-
         float dist = Vector3.Distance(transform.position, PlayerTarget.position);
         if (dist > Stats.visionRange) return false;
 
         Vector3 dir = (PlayerTarget.position - transform.position).normalized;
         float angle = Vector3.Angle(transform.forward, dir);
-        // Trong combat thì dùng 360 độ awareness (đã biết Player ở đâu)
         return angle <= 180f && dist <= Stats.dropAggroRange;
     }
-
-    // =========================================================
-    // HANDLE MOVEMENT
-    // =========================================================
 
     private void HandleMovement()
     {
         Vector3 currentVelocity = Vector3.zero;
 
-        // --- 1. NGUỒN VẬN TỐC ---
-        // 🟢 FIX: Thêm AttackState (Attack Magnetism) và HitReactionState (Knockback) vào nguồn vận tốc
-        if (currentState is EnemyStrafeState || currentState is EnemyDodgeState 
-            || currentState is EnemyGapCloserState || currentState is EnemyAttackState
-            || currentState is EnemyHitReactionState)
+        if (currentState == StrafeState || currentState == DodgeState || 
+            currentState == GapCloserState || currentState == AttackState ||
+            currentState == HitReactionState || currentState == ClearPathState) 
         {
             currentVelocity = ManualVelocity;
         }
@@ -355,62 +534,46 @@ public class EnemyStateMachine : MonoBehaviour, IDamageable
             currentVelocity = Agent.desiredVelocity;
         }
 
-        // --- 2. SEPARATION (chỉ cho state không tự tính) ---
-        if (!(currentState is EnemyStrafeState) && !(currentState is EnemyDodgeState)
-            && !(currentState is EnemyDeathState) && !(currentState is EnemyHitReactionState)
-            && !(currentState is EnemyAttackState)) // Cực kỳ quan trọng: đang chém thì không bị dạt ra
+        if (currentState != StrafeState && currentState != DodgeState && 
+            currentState != DeathState && currentState != AttackState &&
+            currentState != HitReactionState && currentState != ClearPathState)
         {
             currentVelocity += ComputeSeparationForce();
         }
 
-        // --- 3. GRAVITY ---
         Vector3 motion = currentVelocity * Time.deltaTime;
-
-        if (!Controller.isGrounded)
-            VerticalVelocity += Physics.gravity.y * Time.deltaTime;
-        else if (VerticalVelocity < 0)
-            VerticalVelocity = -2f;
-
+        if (!Controller.isGrounded) VerticalVelocity += Physics.gravity.y * Time.deltaTime;
+        else if (VerticalVelocity < 0) VerticalVelocity = -2f;
         motion.y = VerticalVelocity * Time.deltaTime;
 
-        // --- 4. EXECUTE ---
         if (Controller.enabled) Controller.Move(motion);
         if (Agent.isActiveAndEnabled && Agent.isOnNavMesh) Agent.nextPosition = transform.position;
 
-        // --- 5. CARVING ---
         HandleCarvingSwitch();
 
-        // --- 6. ROTATION (không Strafe/HitReaction/Death/Attack) ---
-        // AttackState đã tự xử lý xoay mặt (TrackPlayer), nếu để tự động xoay theo currentVelocity
-        // thì khi bị đẩy nó sẽ quay mặt đi chỗ khác chém hụt!
-        if (!(currentState is EnemyStrafeState) && !(currentState is EnemyHitReactionState)
-            && !(currentState is EnemyDeathState) && !(currentState is EnemyAttackState)
-            && !(currentState is EnemyDodgeState))
+        if (currentState != StrafeState && currentState != DeathState && 
+            currentState != AttackState && currentState != DodgeState &&
+            currentState != HitReactionState && currentState != ClearPathState)
         {
             Vector3 lookDir = currentVelocity;
             lookDir.y = 0;
             if (lookDir.sqrMagnitude > 0.1f)
             {
                 Quaternion targetRot = Quaternion.LookRotation(lookDir);
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetRot,
-                    Stats.turnSpeed * Time.deltaTime * 0.01f);
+                transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRot, Stats.turnSpeed * Time.deltaTime);
             }
         }
 
-        // --- 7. ANIMATOR ---
         UpdateAnimator(currentVelocity);
     }
-
-    // =========================================================
-    // BOIDS SEPARATION — NonAlloc optimized
-    // =========================================================
 
     public Vector3 ComputeSeparationForce()
     {
         Vector3 separation = Vector3.zero;
-        float radius = Stats.separationRadius;
+        float baseRadius = Stats.separationRadius;
 
-        int count = Physics.OverlapSphereNonAlloc(transform.position, radius, separationBuffer);
+        float searchRadius = baseRadius * 3f;
+        int count = Physics.OverlapSphereNonAlloc(transform.position, searchRadius, separationBuffer);
         for (int i = 0; i < count; i++)
         {
             Collider col = separationBuffer[i];
@@ -429,20 +592,18 @@ public class EnemyStateMachine : MonoBehaviour, IDamageable
                 dist = 0.01f;
             }
 
-            float strength = (radius - dist) / radius;
+            float effectiveRadius = baseRadius;
+            if (dist > effectiveRadius) continue;
+
+            float strength = (effectiveRadius - dist) / effectiveRadius;
             separation += diff.normalized * (strength * Stats.separationStrength);
         }
-
         return separation;
     }
 
-    // =========================================================
-    // CARVING — State-driven
-    // =========================================================
-
     private void HandleCarvingSwitch()
     {
-        bool shouldCarve = currentState is EnemyIdleState;
+        bool shouldCarve = currentState == IdleState;
 
         if (shouldCarve && !_isInObstacleMode)
         {
@@ -459,8 +620,7 @@ public class EnemyStateMachine : MonoBehaviour, IDamageable
             Agent.enabled     = true;
             _isInObstacleMode = false;
 
-            if (Agent.isOnNavMesh)
-                Agent.nextPosition = transform.position;
+            if (Agent.isOnNavMesh) Agent.nextPosition = transform.position;
         }
     }
 
@@ -476,105 +636,98 @@ public class EnemyStateMachine : MonoBehaviour, IDamageable
         }
     }
 
-    // =========================================================
-    // ANIMATOR
-    // =========================================================
-
     private void UpdateAnimator(Vector3 velocity)
     {
-        // Chống nhiễu số (khử các giá trị quá nhỏ như 0.00005 khiến Anim nhảy loạn xạ)
-        if (velocity.magnitude < 0.05f) velocity = Vector3.zero;
+        float speedMag = velocity.magnitude;
 
-        Vector3 localVelocity = transform.InverseTransformDirection(velocity);
-        float maxSpeed = Stats.moveSpeed > 0 ? Stats.moveSpeed : 1f;
-        
-        // Khi đi tuần (Patrol), vận tốc vật lý bị giảm còn 40%. 
-        // Nhưng ta muốn Anim vẫn phát đủ biên độ (đạt Z=1) để không bị nhòe với Idle.
-        if (currentState is EnemyPatrolState && velocity.magnitude > 0.1f)
+        float currentRotY = transform.eulerAngles.y;
+        float deltaRotY = Mathf.DeltaAngle(lastRotationY, currentRotY);
+        float turnSpeed = (Time.deltaTime > 0) ? (deltaRotY / Time.deltaTime) : 0f;
+        lastRotationY = currentRotY;
+        float normalizedTurn = turnSpeed / Stats.turnSpeed;
+
+        if (speedMag < 0.05f)
         {
-            maxSpeed *= 0.4f; // Normalize lại để Z chạm tới 1.0
+            float velX = 0f;
+            if (Mathf.Abs(normalizedTurn) > 0.05f) velX = normalizedTurn;
+
+            Anim.SetFloat(EnemyConstants.HashVelocityX, velX, 0.1f, Time.deltaTime);
+            Anim.SetFloat(EnemyConstants.HashVelocityZ, 0f, 0.1f, Time.deltaTime);
+            Anim.SetFloat("MoveMultiplier", 1f); 
+            return;
         }
 
-        float velocityX = localVelocity.x / maxSpeed;
-        float velocityZ = localVelocity.z / maxSpeed;
+        Vector3 localDir = transform.InverseTransformDirection(velocity.normalized);
 
-        Anim.SetFloat("VelocityX", velocityX, 0.1f, Time.deltaTime);
-        Anim.SetFloat("VelocityZ", velocityZ, 0.1f, Time.deltaTime);
+        float walkSpeed = 2.0f;
+        float runSpeed = 5.0f; 
+
+        float blendMagnitude = 1f; 
+        float animMultiplier = 1f; 
+
+        if (speedMag <= walkSpeed + 0.5f) 
+        {
+            blendMagnitude = 1f;
+            animMultiplier = speedMag / walkSpeed;
+            animMultiplier = Mathf.Clamp(animMultiplier, 0.5f, 1.2f);
+        }
+        else
+        {
+            blendMagnitude = Mathf.Lerp(1f, 2f, (speedMag - walkSpeed) / (runSpeed - walkSpeed));
+            blendMagnitude = Mathf.Clamp(blendMagnitude, 1f, 2f);
+            
+            animMultiplier = speedMag / runSpeed;
+            animMultiplier = Mathf.Clamp(animMultiplier, 0.8f, 1.5f);
+        }
+
+        Anim.SetFloat(EnemyConstants.HashVelocityX, localDir.x * blendMagnitude, 0.1f, Time.deltaTime);
+        Anim.SetFloat(EnemyConstants.HashVelocityZ, localDir.z * blendMagnitude, 0.1f, Time.deltaTime);
+        Anim.SetFloat("MoveMultiplier", animMultiplier);
     }
 
-    // =========================================================
-    // GIZMOS
-    // =========================================================
-
-    private void OnDrawGizmos()
-    {
-        if (currentState == null) return;
-
-        Vector3 head = transform.position + Vector3.up * 2.5f;
-
-        if (currentState is EnemyAttackState)
-        {
-            Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(head, 0.3f);
-        }
-        else if (currentState is EnemyStrafeState)
-        {
-            Gizmos.color = Color.blue;
-            Gizmos.DrawWireCube(head, Vector3.one * 0.3f);
-        }
-        else if (currentState is EnemyHitReactionState)
-        {
-            Gizmos.color = Color.magenta;
-            Gizmos.DrawWireSphere(head, 0.4f);
-        }
-        else if (currentState is EnemyDeathState)
-        {
-            Gizmos.color = Color.black;
-            Gizmos.DrawWireSphere(head, 0.5f);
-        }
-        else if (currentState is EnemyDodgeState)
-        {
-            Gizmos.color = Color.cyan;
-            Gizmos.DrawWireSphere(head, 0.3f);
-        }
-
-        // Vùng Separation
-        if (currentState is EnemyStrafeState && Stats != null)
-        {
-            Gizmos.color = new Color(0f, 0.5f, 1f, 0.12f);
-            Gizmos.DrawSphere(transform.position, Stats.separationRadius);
-        }
-
-        // Slot link
-        if (Application.isPlaying && ReservedSlotIndex >= 0 && EnemySlotManager.Instance != null)
-        {
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawLine(transform.position + Vector3.up,
-                EnemySlotManager.Instance.WorldSlotPosition(ReservedSlotIndex) + Vector3.up);
-        }
-
-        // Aggro indicator
-        if (Application.isPlaying && HasAggro)
-        {
-            Gizmos.color = Color.red;
-            Gizmos.DrawLine(transform.position + Vector3.up * 2f, LastKnownPlayerPos + Vector3.up);
-        }
-    }
-
-    private void OnAnimatorMove()
+    public void OnAnimatorMoveProxy()
     {
         if (Anim == null || !Anim.applyRootMotion) return;
-
-        // Bắt sự kiện Root Motion từ Animator và truyền thẳng vào CharacterController
-        // Áp dụng cho các State cần xài Root Motion thật (ví dụ: Dodge, GapCloser)
-        if (currentState is EnemyDodgeState || currentState is EnemyGapCloserState || currentState is EnemyAttackState)
+        if (currentState == DodgeState || currentState == GapCloserState || currentState == AttackState)
         {
             Vector3 rootMotion = Anim.deltaPosition;
-            rootMotion.y = 0; // Khóa Y để quái không bay lên trời
-            if (rootMotion.sqrMagnitude > 0.0001f)
+            rootMotion.y = 0; 
+            if (rootMotion.sqrMagnitude > 0.0001f && Controller.enabled) Controller.Move(rootMotion);
+        }
+    }
+
+    public void AnimationEvent_TriggerHitbox()
+    {
+        if (currentState == AttackState) 
+            AttackState.PerformHitboxCheck();
+            
+        else if (currentState == RangeAttackState) 
+            RangeAttackState.FireProjectile(); 
+    }
+
+    public void AnimationEvent_TriggerPhase2Explosion()
+    {
+        // 🟢 Được gọi từ Animation Event của đòn gầm thét Phase 2
+        if (currentState == PhaseTransitionState && Stats.meleeBurstPrefab != null)
+        {
+            GameObject explosion = ObjectPoolManager.Instance.SpawnFromPool(
+                Stats.meleeBurstPrefab, transform.position, Quaternion.identity);
+
+            LightningAOE aoeScript = explosion.GetComponent<LightningAOE>();
+            if (aoeScript != null)
             {
-                Controller.Move(rootMotion);
+                aoeScript.Setup(Stats.attackDamage, Stats.enemyElement, true);
             }
         }
+    }
+
+    public void FaceTarget(Vector3 targetPos, float speedMultiplier = 1f)
+    {
+        Vector3 dirToTarget = (targetPos - transform.position);
+        dirToTarget.y = 0f;
+        if (dirToTarget.sqrMagnitude < 0.01f) return;
+
+        Quaternion targetRot = Quaternion.LookRotation(dirToTarget.normalized);
+        transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRot, Stats.turnSpeed * speedMultiplier * Time.deltaTime);
     }
 }

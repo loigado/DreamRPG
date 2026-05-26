@@ -1,0 +1,107 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &4529995558119713956
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3371212679026098502}
+  - component: {fileID: 2530560825219314914}
+  m_Layer: 0
+  m_Name: ObjectPoolManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &3371212679026098502
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4529995558119713956}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 16.17285, y: 0, z: -3.09384}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2530560825219314914
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4529995558119713956}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c1c873221eeb189418e3775715bc5ac4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ObjectPoolManager
+  pools:
+  - poolName: Arrow
+    prefab: {fileID: 2013828501162641621, guid: ef1230c9a3475a04181bf5ab9c1f4492, type: 3}
+    size: 20
+    canExpand: 1
+  - poolName: WindArrow
+    prefab: {fileID: 2013828501162641621, guid: 3f7a2b8cbc29ab845bedd23900adf20a, type: 3}
+    size: 5
+    canExpand: 1
+  - poolName: WindArrowVariant
+    prefab: {fileID: 2609317025556625245, guid: e47ba6639709ee14f8d7816f1c4bfd88, type: 3}
+    size: 20
+    canExpand: 1
+  - poolName: PhiKiem
+    prefab: {fileID: 6913769687126135685, guid: 97cf45620fba7f54baa940a2cdca1e5b, type: 3}
+    size: 1
+    canExpand: 1
+  - poolName: GhostKnight
+    prefab: {fileID: 3776487627686522104, guid: b3173651376866e4d855c71c0f996958, type: 3}
+    size: 4
+    canExpand: 1
+  - poolName: VFXSkill2Slash
+    prefab: {fileID: 7392759932067678839, guid: 9a3836a28671f7e4ea9b800063cc5547, type: 3}
+    size: 4
+    canExpand: 1
+  - poolName: VFX_Zap_02_Blue
+    prefab: {fileID: 5627696518775099638, guid: 390cc74915d4a054bbd897e1885047a4, type: 3}
+    size: 4
+    canExpand: 1
+  - poolName: Lightning-Smoke2
+    prefab: {fileID: 2649108799351664574, guid: 48b45e882e3ce5c4e8354f9169094fd4, type: 3}
+    size: 4
+    canExpand: 1
+  - poolName: VFX_ThunderStorm
+    prefab: {fileID: 3521288894642801586, guid: b717988438623114bb363a5e5d81263e, type: 3}
+    size: 1
+    canExpand: 1
+  - poolName: GhostFrame
+    prefab: {fileID: 8018899434711615463, guid: 6d85d992753c9c64fb0126c1a37eb9ec, type: 3}
+    size: 2
+    canExpand: 1
+  - poolName: Vfx_AxeSkill1
+    prefab: {fileID: 2754480078800281641, guid: 37369b6752369b144af0f95400e8eb05, type: 3}
+    size: 1
+    canExpand: 1
+  - poolName: Vfx_AxeSkill3
+    prefab: {fileID: 176822597162087251, guid: 287826d8e8a54ac40af8d56aaec45b59, type: 3}
+    size: 1
+    canExpand: 1
+  - poolName: Vfx_AxeSkill2.1
+    prefab: {fileID: 100000, guid: 5d25d806b817d244c8eb81947d9b1f31, type: 3}
+    size: 1
+    canExpand: 1
+  - poolName: Vfx_AxeSkill2.2
+    prefab: {fileID: 100004, guid: 2fda30fa7de01734e9220d60e45598b3, type: 3}
+    size: 1
+    canExpand: 1
+  - poolName: VFX_Skill2Tornado
+    prefab: {fileID: 6167165751207411726, guid: 9ffd56eec3f545a42b1fb13ebd7c122c, type: 3}
+    size: 1
+    canExpand: 1

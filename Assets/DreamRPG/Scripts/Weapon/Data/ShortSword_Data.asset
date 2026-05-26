@@ -15,6 +15,10 @@ MonoBehaviour:
   WeaponName: Sword
   WeaponAnimID: 1
   Type: 0
+  WeaponIcon: {fileID: 1282831733, guid: aea0de8f28f7b0f41b247710d2a0c53f, type: 3}
+  Skill1Icon: {fileID: 512942381, guid: 3310d402fcfed4844a62a9d754488a3d, type: 3}
+  Skill2Icon: {fileID: 746611419, guid: 3310d402fcfed4844a62a9d754488a3d, type: 3}
+  Skill3Icon: {fileID: -480761621, guid: 3310d402fcfed4844a62a9d754488a3d, type: 3}
   Damage: 20
   StaminaCost: 15
   ComboAnimationNames:
@@ -24,18 +28,28 @@ MonoBehaviour:
   - Attack4
   - Attack5
   DashAttackAnimName: SwordDashAttack
-  ArrowPrefab: {fileID: 0}
-  ShootForce: 25
+  RollingAttackAnimName: RollAttack_Sword
+  skill1: {fileID: 11400000, guid: aa2404dad055a294cb048f101d468eae, type: 2}
+  skill2: {fileID: 11400000, guid: ec60e914bb7fb2943b1d76fe0bc1ee18, type: 2}
+  skill3: {fileID: 11400000, guid: bc7be68c0a076e247a830c9699b3d2c3, type: 2}
+  ParryAnimName: Sword_Parry
+  BlockAnimName: ShortSword_Block_Start
+  GuardBreakAnimName: GuardBreak
+  BlockHitAnimName: ShortSword_Block_Impact
+  ParryAttackAnimName: Sword_Parry_Attack
+  ParryAbsorbAnimName: Sword_Absorb
+  ShieldMaterial: {fileID: -876546973899608171, guid: 4c057855495fe2d419b4fc59cb5c1191,
+    type: 3}
+  CounterAnimName: CouterAttack_Sword
+  BlinkDisappearFX: {fileID: 3958596659431381315, guid: c50f9e2c685970e4c8ebcd5fc8c7b3e4,
+    type: 3}
+  BlinkAppearFX: {fileID: 3958596659431381315, guid: c50f9e2c685970e4c8ebcd5fc8c7b3e4,
+    type: 3}
+  HitAnimName: Sword_Hit
+  HeavyHitAnimName: Sword_Heavy_Hit
+  DeathAnimName: Sword_Death
   EquipAnimName: DrawSword
   UnequipAnimName: UnDrawSword
   LocomotionStateName: ShortSword_Locomotion
   JumpAnimName: ShortSword_Jump
   RollAnimName: ShortSword_Roll
-  BlockAnimName: ShortSword_Block_Idle
-  ParryAnimName: Parry
-  GuardBreakAnimName: GuardBreak
-  BlockHitAnimName: ShortSword_Block_Impact
-  ShieldMaterial: {fileID: -876546973899608171, guid: 4c057855495fe2d419b4fc59cb5c1191, type: 3}
-  skill1: {fileID: 11400000, guid: aa2404dad055a294cb048f101d468eae, type: 2}
-  skill2: {fileID: 11400000, guid: ec60e914bb7fb2943b1d76fe0bc1ee18, type: 2}
-  skill3: {fileID: 11400000, guid: bc7be68c0a076e247a830c9699b3d2c3, type: 2}

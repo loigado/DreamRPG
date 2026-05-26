@@ -2,7 +2,7 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 using Unity.Cinemachine; 
-using FischlWorks;
+using System.Collections;
 
 public class PlayerStateMachine : MonoBehaviour, IDamageable
 {
@@ -18,11 +18,12 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
     public bool IsInvulnerable { get; private set; } 
     public PlayerHealth PlayerHP { get; private set; }
 
-    public static Action<Vector3> OnPlayerAttack;    // Truyền vị trí Player khi tấn công
+    public static Action<Vector3> OnPlayerAttack;    
     
     [Header("Physics Settings")]
     public float Gravity = -15f; 
     public float JumpHeight = 2f;
+    public bool CanDoubleJump { get; set; } = true;
     
     [Header("Movement Settings")]
     public float FreeLookMovementSpeed = 5f;
@@ -73,21 +74,23 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
 
     [Header("Camera Settings")]
     public GameObject AimCamera;
-    
-    // 🟢 FIX 1: LƯU TRỮ SẴN COMPONENT CINEMACHINE CAMERA
     public CinemachineCamera CachedAimCam { get; private set; }
 
-    [Header("Aiming IK (Bẻ xương)")]
     public Transform SpineBone;
     public Vector3 SpineOffset;
     public Vector3 SpineAimOffset; 
-    public Vector3 SpineBlockOffset; // Dùng để chỉnh sửa độ nghiêng khi Đỡ đòn
+    public Vector3 SpineBlockOffset; 
+    public float ParryYawOffset = -30f; // Góc bẻ ngược lại bên trái để bù trừ đòn Parry nghiêng qua phải 
 
     [Header("UI References")]
     public GameObject CrosshairUI;
-
-    // 🟢 FIX 2: LƯU TRỮ SẴN RECT TRANSFORM CỦA UI
     public RectTransform CachedCrosshairRect { get; private set; }
+    public ActionHUD actionHUD;
+
+    [Header("Empty Vessel Settings")]
+    public System.Collections.Generic.Dictionary<SkillElement, float> ElementalEnergies { get; private set; } = new System.Collections.Generic.Dictionary<SkillElement, float>();
+    public float MaxElementalEnergy { get; private set; } = 100f;
+    public static Action<SkillElement, float> OnElementAbsorbed; 
 
     [Header("Systems")]
     public TargetSystem TargetSys;
@@ -95,7 +98,6 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
 
     [Header("Weapon System")]
     public WeaponHolder weaponHolder { get; private set; }
-    public csHomebrewIK FootIK { get; private set; }
 
     public float VerticalVelocity { get; set; }
     public Vector3 CurrentVelocity { get; set; }
@@ -103,8 +105,16 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
     public State currentState { get; private set; }
 
     [Header("Shield VFX (Kratos Style)")]
-    [Tooltip("Gắn trực tiếp Game Object Khiên trên tay nhân vật vào đây để bật/tắt")]
     public GameObject ShieldVFX; 
+    
+    public AfterimageController afterimageFX;
+
+    public bool HasPerformedPerfectDodge { get; set; } = false;
+    public Transform LastDodgedEnemy { get; set; }
+
+    [HideInInspector] public float RootMotionMultiplier = 1f;
+    [HideInInspector] public bool IsAttackSliding = false;
+    private Coroutine slowMoCoroutine;
 
     private readonly int WeaponIDHash = Animator.StringToHash("WeaponID");
     private readonly int SwitchWeaponHash = Animator.StringToHash("SwitchWeapon");
@@ -113,13 +123,19 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
     {
         Animator = GetComponent<Animator>();
         weaponHolder = GetComponentInChildren<WeaponHolder>();
-        FootIK = GetComponent<csHomebrewIK>();
         PlayerHP = GetComponent<PlayerHealth>();
         if (Camera.main != null) MainCameraTransform = Camera.main.transform;
 
-        // 🟢 FIX: Thực hiện Cache (lưu trữ) Component ngay từ đầu để không gọi GetComponent trong Update
         if (AimCamera != null) CachedAimCam = AimCamera.GetComponent<CinemachineCamera>();
         if (CrosshairUI != null) CachedCrosshairRect = CrosshairUI.GetComponent<RectTransform>();
+        afterimageFX = GetComponent<AfterimageController>();
+        
+        // Tự động tìm SkillManager nếu chưa kéo vào Inspector
+        if (SkillManager == null) 
+        {
+            SkillManager = FindObjectOfType<SkillManager>();
+            if (SkillManager == null) Debug.LogError("❌ KHÔNG TÌM THẤY SKILLMANAGER TRONG SCENE!");
+        }
     }
 
     private void OnEnable() => InputReader.SwitchWeaponEvent += OnWeaponSwitched;
@@ -131,7 +147,7 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
         ToggleEquipmentVFX("MagicCircle1", false);
         ToggleEquipmentVFX("MagicCircle", false);
         ToggleEquipmentVFX("MagicCircle2", false);
-        SwitchState(new PlayerMoveState(this));
+        SwitchState(new PlayerMovementState(this));
     }
 
     private void Update()
@@ -156,6 +172,57 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
             windSpreadTimer -= Time.deltaTime;
             if (windSpreadTimer <= 0) DeactivateWindSpreadBuff();
         }
+
+        // 🟢 GỌI CẬP NHẬT UI HỒI CHIÊU LIÊN TỤC
+        UpdateSkillUI(); 
+    }
+    // 🟢 HÀM KIỂM TRA TÀI NGUYÊN ĐỘC LẬP (Không gộp chung Nguyên Tố và Thể Lực)
+    private bool CanAffordSkill(SkillData skill)
+    {
+        if (skill == null) return false;
+
+        // 1. Kiểm tra Nguyên Tố (Chỉ check nếu chiêu này có hệ)
+        if (skill.element != SkillElement.KhongHe)
+        {
+            // Trượt nếu sai hệ, hoặc dùng hệ nhưng không đủ năng lượng
+            if (!ElementalEnergies.ContainsKey(skill.element) || ElementalEnergies[skill.element] < skill.elementCost) return false;
+        }
+
+        // 2. Kiểm tra Thể Lực (Chỉ check nếu chiêu này có yêu cầu tốn thể lực)
+        if (skill.staminaCost > 0 && Stamina != null)
+        {
+            // Trượt nếu cạn thể lực
+            if (!Stamina.HasEnoughStamina(skill.staminaCost)) return false;
+        }
+
+        return true; // Phải qua được cả 2 bài test thì Icon mới sáng lên!
+    }
+    // 🟢 CẬP NHẬT LẠI HÀM NÀY ĐỂ BÁO TÌNH TRẠNG TÀI NGUYÊN CHO UI
+    private void UpdateSkillUI()
+    {
+        if (actionHUD != null && CurrentWeapon != null && SkillManager != null)
+        {
+            // --- SKILL 1 ---
+            if (CurrentWeapon.skill1 != null)
+            {
+                actionHUD.UpdateSkillCooldown(0, SkillManager.GetRemainingCooldown(CurrentWeapon.skill1), CurrentWeapon.skill1.cooldownTime);
+                actionHUD.UpdateSkillUsability(0, CanAffordSkill(CurrentWeapon.skill1)); // 🟢 Cập nhật sáng/tối
+            }
+            
+            // --- SKILL 2 ---
+            if (CurrentWeapon.skill2 != null)
+            {
+                actionHUD.UpdateSkillCooldown(1, SkillManager.GetRemainingCooldown(CurrentWeapon.skill2), CurrentWeapon.skill2.cooldownTime);
+                actionHUD.UpdateSkillUsability(1, CanAffordSkill(CurrentWeapon.skill2)); // 🟢 Cập nhật sáng/tối
+            }
+            
+            // --- SKILL 3 ---
+            if (CurrentWeapon.skill3 != null)
+            {
+                actionHUD.UpdateSkillCooldown(2, SkillManager.GetRemainingCooldown(CurrentWeapon.skill3), CurrentWeapon.skill3.cooldownTime);
+                actionHUD.UpdateSkillUsability(2, CanAffordSkill(CurrentWeapon.skill3)); // 🟢 Cập nhật sáng/tối
+            }
+        }
     }
 
     private void LateUpdate()
@@ -174,8 +241,6 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
         {
             if (SpineBone != null)
             {
-                // 🟢 Procedural IK (Bẻ xương ngực) khi Block
-                // Giúp tay và ngực luôn hướng về phía địch/camera, trong khi chân vẫn đi theo hướng di chuyển
                 Vector3 targetLookDir = MainCameraTransform.forward;
                 if (TargetSys != null && TargetSys.IsHardLocking && TargetSys.GetCurrentTarget() != null)
                 {
@@ -183,17 +248,44 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
                 }
                 targetLookDir.y = 0;
 
-                // Tính góc lệch giữa thân dưới (root) và hướng mục tiêu
                 float angle = Vector3.SignedAngle(transform.forward, targetLookDir, Vector3.up);
-                
-                // Giới hạn góc bẻ xương tối đa 70 độ để không bị "gãy lưng"
                 float clampedAngle = Mathf.Clamp(angle, -70f, 70f);
 
-                // Áp dụng xoay Spine (Yaw theo mục tiêu)
                 SpineBone.rotation = Quaternion.AngleAxis(clampedAngle, transform.up) * SpineBone.rotation;
-                
-                // 🟢 FIX: Áp dụng góc lệch thủ công (Để sửa lỗi bị nghiêng/lệch)
                 SpineBone.rotation = SpineBone.rotation * Quaternion.Euler(SpineBlockOffset);
+            }
+        }
+        else if (currentState is PlayerParryDecisionState)
+        {
+            if (SpineBone != null)
+            {
+                Transform parryTarget = null;
+                if (currentState is PlayerParryDecisionState decision)
+                {
+                    parryTarget = decision.ParriedEnemy;
+                }
+
+                if (parryTarget == null && TargetSys != null)
+                {
+                    parryTarget = TargetSys.GetCurrentTarget();
+                }
+
+                if (parryTarget != null)
+                {
+                    Vector3 targetLookDir = (parryTarget.position - transform.position).normalized;
+                    targetLookDir.y = 0;
+
+                    if (targetLookDir.sqrMagnitude > 0.01f)
+                    {
+                        float angle = Vector3.SignedAngle(transform.forward, targetLookDir, Vector3.up);
+                        float finalAngle = angle + ParryYawOffset;
+                        SpineBone.rotation = Quaternion.AngleAxis(finalAngle, transform.up) * SpineBone.rotation;
+                    }
+                }
+                else
+                {
+                    SpineBone.rotation = Quaternion.AngleAxis(ParryYawOffset, transform.up) * SpineBone.rotation;
+                }
             }
         }
     }
@@ -202,7 +294,11 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
     {
         if (Animator.applyRootMotion && Controller != null)
         {
-            Vector3 motion = Animator.deltaPosition;
+            Vector3 rootMotionDelta = Animator.deltaPosition;
+            rootMotionDelta.x *= RootMotionMultiplier;
+            rootMotionDelta.z *= RootMotionMultiplier;
+            
+            Vector3 motion = rootMotionDelta;
             motion.y += VerticalVelocity * Time.deltaTime;
             Controller.Move(motion);
         }
@@ -242,25 +338,37 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
         {
             CurrentWeapon = null;
             if (weaponHolder != null) weaponHolder.DeactivateAllWeapons();
-            if (currentState is PlayerMoveState == false) SwitchState(new PlayerMoveState(this));
+            if (currentState is PlayerMovementState == false) SwitchState(new PlayerMovementState(this));
             return; 
         }
 
         if (CurrentWeapon == newWeapon) return;
-        if (CurrentWeapon != null) SwitchState(new PlayerUnequipState(this, newWeapon));
-        else
+
+        if (CurrentWeapon == null) 
         {
             EquipWeaponDataOnly(newWeapon);
             SwitchState(new PlayerEquipState(this));
+        }
+        else 
+        {
+            SwitchState(new PlayerUnequipState(this, newWeapon));
         }
     }
 
     public void EquipWeaponDataOnly(WeaponData newWeapon)
     {
         CurrentWeapon = newWeapon;
+
+        if (actionHUD != null && CurrentWeapon != null)
+        {
+            Sprite s1 = CurrentWeapon.Skill1Icon != null ? CurrentWeapon.Skill1Icon : (CurrentWeapon.skill1 != null ? CurrentWeapon.skill1.icon : null);
+            Sprite s2 = CurrentWeapon.Skill2Icon != null ? CurrentWeapon.Skill2Icon : (CurrentWeapon.skill2 != null ? CurrentWeapon.skill2.icon : null);
+            Sprite s3 = CurrentWeapon.Skill3Icon != null ? CurrentWeapon.Skill3Icon : (CurrentWeapon.skill3 != null ? CurrentWeapon.skill3.icon : null);
+
+            actionHUD.SwitchWeaponProfile(CurrentWeapon.WeaponIcon, s1, s2, s3);
+        }
     }
 
-    // 🟢 HÀM XỬ LÝ CHUNG CHO MỌI KỸ NĂNG
     public void TryExecuteSkill(int skillSlot)
     {
         if (CurrentWeapon == null) return;
@@ -271,15 +379,54 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
         else if (skillSlot == 3) targetSkill = CurrentWeapon.skill3;
 
         if (targetSkill == null || !SkillManager.IsSkillReady(targetSkill)) return;
-        if (!Stamina.HasEnoughStamina(targetSkill.staminaCost)) return;
+
+        // ==========================================
+        // 🟢 1. XỬ LÝ NĂNG LƯỢNG NGUYÊN TỐ (Độc Lập)
+        // ==========================================
+        if (targetSkill.element != SkillElement.KhongHe)
+        {
+            if (!ElementalEnergies.ContainsKey(targetSkill.element) || ElementalEnergies[targetSkill.element] < targetSkill.elementCost)
+            {
+                Debug.Log($"<color=red>Thiếu Năng Lượng Nguyên Tố {targetSkill.element}!</color>");
+                return;
+            }
+        }
+
+        // ==========================================
+        // 🟢 2. XỬ LÝ THỂ LỰC (Độc Lập)
+        // ==========================================
+        if (targetSkill.staminaCost > 0 && Stamina != null)
+        {
+            // LƯU Ý: Nếu là Cung, các hàm Activate...Buff bên dưới của bạn đang tự gọi Stamina.UseStamina() rồi. 
+            // Nên ở đây ta CHỈ KIỂM TRA ĐIỀU KIỆN thôi, không trừ vội để tránh bị trừ 2 lần.
+            if (!Stamina.HasEnoughStamina(targetSkill.staminaCost)) 
+            {
+                Debug.Log("<color=red>Thiếu Thể Lực!</color>");
+                return;
+            }
+        }
+
+        // ==========================================
+        // 🟢 3. TRỪ TÀI NGUYÊN VÀ THỰC THI
+        // ==========================================
+        // Trừ Năng Lượng Nguyên Tố
+        if (targetSkill.element != SkillElement.KhongHe)
+        {
+            ElementalEnergies[targetSkill.element] -= targetSkill.elementCost;
+            if (ElementalEnergies[targetSkill.element] <= 0f) ElementalEnergies[targetSkill.element] = 0f;
+            
+            OnElementAbsorbed?.Invoke(targetSkill.element, ElementalEnergies[targetSkill.element] / MaxElementalEnergy);
+            Debug.Log($"<color=cyan>⚡ TIÊU HAO {targetSkill.elementCost} NĂNG LƯỢNG {targetSkill.element}!</color>");
+        }
 
         string wName = CurrentWeapon.WeaponName.ToLower();
 
-        // 🟢 GIAI ĐOẠN 4: PHÁT TÍN HIỆU TẤN CÔNG (Dành cho Skill Cận chiến)
         if (CurrentWeapon.Type == WeaponType.Melee)
         {
-             // Phát tín hiệu để quái phản xạ gồng giáp hoặc lùi lại
-             PlayerStateMachine.OnPlayerAttack?.Invoke(transform.position);
+            PlayerStateMachine.OnPlayerAttack?.Invoke(transform.position);
+            
+            // Trừ Thể Lực cho Cận Chiến
+            if (targetSkill.staminaCost > 0 && Stamina != null) Stamina.UseStamina(targetSkill.staminaCost);
 
             if (wName.Contains("axe") || wName.Contains("rìu"))
             {
@@ -294,7 +441,6 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
                 else if (skillSlot == 3) SwitchState(new PlayerLightningDomainState(this, targetSkill));
             }
         }
-        // Xử lý Cung (Ngắm xong mới bắn nên chỉ lưu cờ Buff, CHƯA PHÁT TÍN HIỆU TẤN CÔNG Ở ĐÂY)
         else if (CurrentWeapon.Type == WeaponType.Ranged && (wName.Contains("bow") || wName.Contains("cung")))
         {
             if (skillSlot == 1) ActivateWindBowBuff(targetSkill, 10f);
@@ -315,9 +461,7 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
         bool isSkill2Ready = HasSkill2Buff && activeSkill2 != null && activeSkill2.vfxPrefab != null;
         bool isSkill3Ready = HasWindSpreadBuff && activeWindSpreadSkill != null && activeWindSpreadSkill.vfxPrefab != null;
 
-        // 🟢 FIX: DÙNG HỆ THỐNG POOL THAY CHO INSTANTIATE
-
-        if (isSkill2Ready) // 🌪️ Chiêu Lốc Xoáy
+        if (isSkill2Ready) 
         {
             GameObject tornado = ObjectPoolManager.Instance.SpawnFromPool(activeSkill2.vfxPrefab, ArrowSpawnPoint.position, Quaternion.LookRotation(direction));
             if (tornado.TryGetComponent<MovingTornado>(out MovingTornado tornadoScript))
@@ -326,7 +470,7 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
             }
             DeactivateSkill2Buff(); 
         }
-        else if (isSkill1Ready && isSkill3Ready) // 🌬️ Combo 2 Buff Gió
+        else if (isSkill1Ready && isSkill3Ready) 
         {
             for (int i = 0; i < 5; i++)
             {
@@ -350,7 +494,7 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
             }
             DeactivateWindBowBuff(); 
         }
-        else if (isSkill1Ready) // 🏹 Bắn 1 tia gió xuyên thấu
+        else if (isSkill1Ready) 
         {
             GameObject arrow = ObjectPoolManager.Instance.SpawnFromPool(activeWindSkill.vfxPrefab, ArrowSpawnPoint.position, Quaternion.LookRotation(direction));
             SetWindSwirlActive(arrow, true); 
@@ -359,7 +503,7 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
             
             DeactivateWindBowBuff(); 
         }
-        else if (isSkill3Ready) // 🏹 Bắn 5 tia hình quạt
+        else if (isSkill3Ready) 
         {
             for (int i = 0; i < 5; i++)
             {
@@ -382,7 +526,7 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
                 }
             }
         }
-        else // 🏹 BẮN THƯỜNG
+        else 
         {
             GameObject nArrow = ObjectPoolManager.Instance.SpawnFromPool(ArrowPrefab, ArrowSpawnPoint.position, Quaternion.LookRotation(direction));
             if (nArrow.TryGetComponent<ArrowProjectile>(out ArrowProjectile normalArrowScript))
@@ -526,11 +670,9 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
         originalBodyMaterials.Clear();
     }
 
-    // === HIT RECOVERY I-FRAME ===
     private float hitRecoveryTimer = 0f;
-    private const float HIT_RECOVERY_IFRAME = 0.3f; // 0.3s bất tử sau khi hết choáng
+    private const float HIT_RECOVERY_IFRAME = 0.3f; 
 
-    /// <summary>Bật i-frame sau khi hồi phục từ ImpactState (chống stun-lock).</summary>
     public void StartHitRecoveryIFrame()
     {
         hitRecoveryTimer = HIT_RECOVERY_IFRAME;
@@ -546,15 +688,54 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
         }
     }
 
-    public void TakeDamage(float damage, Vector3 attackerPos)
+    public void TakeDamage(float damage, Vector3 attackerPos, bool isHeavy = false)
     {
+        TakeDamage(damage, attackerPos, AttackGlint.Normal);
+    }
+
+    public void TakeDamage(float damage, Vector3 attackerPos, AttackGlint glint = AttackGlint.Normal)
+    {
+        if (currentState is PlayerRollState rollState && rollState.IsPerfectDodgeWindow)
+        {
+            Collider[] colliders = Physics.OverlapSphere(attackerPos, 3f);
+            Transform trueAttacker = null;
+            float closestDistance = Mathf.Infinity;
+
+            foreach (var col in colliders)
+            {
+                EnemyStateMachine enemy = col.GetComponent<EnemyStateMachine>();
+                if (enemy != null && enemy.Stats != null)
+                {
+                    float dist = Vector3.Distance(attackerPos, enemy.transform.position);
+                    if (dist < closestDistance)
+                    {
+                        closestDistance = dist;
+                        trueAttacker = enemy.transform;
+                    }
+                }
+            }
+
+            if (trueAttacker != null)
+            {
+                EnemyStateMachine enemy = trueAttacker.GetComponent<EnemyStateMachine>();
+                HasPerformedPerfectDodge = true;
+                LastDodgedEnemy = trueAttacker; 
+                
+                SkillElement enemyElem = enemy.Stats.enemyElement;
+                if (afterimageFX != null) afterimageFX.StartTrail(enemyElem);
+                
+                if (slowMoCoroutine != null) StopCoroutine(slowMoCoroutine);
+                slowMoCoroutine = StartCoroutine(PerfectDodgeSlowMotionRoutine());
+                return; 
+            }
+        }
+
         if (IsInvulnerable) return;
 
-        // Block/Parry check — nếu đang giữ Block thì xử lý riêng
         if (currentState is PlayerBlockState blockState)
         {
-            blockState.HandleBlockedHit(damage, attackerPos);
-            return;
+            bool successfullyBlocked = blockState.HandleBlockedHit(damage, attackerPos, glint);
+            if (successfullyBlocked) return; 
         }
 
         if (PlayerHP != null)
@@ -587,5 +768,112 @@ public class PlayerStateMachine : MonoBehaviour, IDamageable
     public void ToggleWeaponVisual(bool isVisible) 
     { 
         if (weaponHolder != null && weaponHolder.CurrentWeaponModel != null) weaponHolder.CurrentWeaponModel.SetActive(isVisible); 
+    }
+    public void ApplyKnockback(Vector3 knockbackForce)
+    {
+        if (IsInvulnerable) return;
+        SwitchState(new PlayerImpactState(this, knockbackForce, true));
+    }
+
+    public void TakeHeavyDamage(float damage, Vector3 attackerPos, Vector3 knockbackForce)
+    {
+        if (currentState is PlayerRollState rollState && rollState.IsPerfectDodgeWindow)
+        {
+            Collider[] colliders = Physics.OverlapSphere(attackerPos, 3f);
+            foreach (var col in colliders)
+            {
+                EnemyStateMachine enemy = col.GetComponent<EnemyStateMachine>();
+                if (enemy != null && enemy.Stats != null)
+                {
+                    SkillElement enemyElem = enemy.Stats.enemyElement;
+                    Debug.Log($"<color=cyan>💨 PERFECT DODGE ĐÒN NẶNG! Liều mạng cướp 40 năng lượng hệ {enemyElem}!</color>");
+                    return; 
+                }
+            }
+            return;
+        }
+
+        if (IsInvulnerable) return;
+
+        if (currentState is PlayerBlockState)
+        {
+            Debug.Log("<color=red>💥 VỠ PHÒNG THỦ! Đòn đánh này không thể bị chặn!</color>");
+        }
+
+        if (PlayerHP != null)
+        {
+            PlayerHP.TakeDamage(damage);
+            if (PlayerHP.IsDead)
+            {
+                SwitchState(new PlayerDeathState(this));
+                return;
+            }
+        }
+        
+        SwitchState(new PlayerImpactState(this, knockbackForce, true));
+    }
+
+    public void AbsorbElement(SkillElement incomingElement, float amount)
+    {
+        if (incomingElement == SkillElement.KhongHe) 
+        {
+            float healAmount = amount * 0.25f; // Tỉ lệ 4:1
+            if (PlayerHP != null && !PlayerHP.IsDead && PlayerHP.CurrentHealth < PlayerHP.MaxHealth)
+            {
+                PlayerHP.Heal(healAmount);
+                Debug.Log($"<color=green>💚 [Empty Vessel] Hút quái Không Hệ. Chuyển {amount} năng lượng thành {healAmount} HP.</color>");
+            }
+            return;
+        }
+
+        if (!ElementalEnergies.ContainsKey(incomingElement))
+        {
+            ElementalEnergies[incomingElement] = 0f;
+        }
+
+        float newEnergy = ElementalEnergies[incomingElement] + amount;
+
+        if (newEnergy > MaxElementalEnergy)
+        {
+            float overflow = newEnergy - MaxElementalEnergy;
+            ElementalEnergies[incomingElement] = MaxElementalEnergy;
+            
+            float healAmount = overflow * 0.25f; // Tỉ lệ 4:1
+            
+            if (PlayerHP != null && !PlayerHP.IsDead && PlayerHP.CurrentHealth < PlayerHP.MaxHealth)
+            {
+                PlayerHP.Heal(healAmount);
+                Debug.Log($"<color=green>💚 BÌNH CHỨA {incomingElement} ĐÃ ĐẦY! Năng lượng dư ({overflow}) chuyển hóa thành {healAmount} HP.</color>");
+            }
+            else
+            {
+                Debug.Log($"<color=orange>⚡ BÌNH CHỨA {incomingElement} ĐÃ ĐẦY! (HP cũng đã đầy, không thể hồi thêm)</color>");
+            }
+        }
+        else
+        {
+            ElementalEnergies[incomingElement] = newEnergy;
+            Debug.Log($"<color=yellow>⚡ HÚT SỨC MẠNH: Nhận {amount} năng lượng {incomingElement}! (Tiến độ: {ElementalEnergies[incomingElement]}/{MaxElementalEnergy})</color>");
+        }
+        
+        OnElementAbsorbed?.Invoke(incomingElement, ElementalEnergies[incomingElement] / MaxElementalEnergy);
+    }
+
+    private IEnumerator PerfectDodgeSlowMotionRoutine()
+    {
+        Time.timeScale = 0.2f;
+        Time.fixedDeltaTime = 0.02f * Time.timeScale;
+        yield return new WaitForSecondsRealtime(0.4f);
+        Time.timeScale = 1f;
+        Time.fixedDeltaTime = 0.02f;
+    }
+
+    public void CancelSlowMotion()
+    {
+        if (slowMoCoroutine != null)
+        {
+            StopCoroutine(slowMoCoroutine);
+            slowMoCoroutine = null;
+        }
     }
 }

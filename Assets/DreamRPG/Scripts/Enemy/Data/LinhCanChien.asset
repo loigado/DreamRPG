@@ -12,18 +12,40 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b43bb0c8901fc404abec4ff2377167ee, type: 3}
   m_Name: LinhCanChien
   m_EditorClassIdentifier: Assembly-CSharp::EnemyStatsSO
+  enemyClass: 0
+  enemyElement: 2
+  isRangedEnemy: 0
   maxHealth: 100
+  maxGuard: 100
+  guardBrokenStunDuration: 3
   moveSpeed: 3
   turnSpeed: 120
   attackDamage: 10
-  attackRange: 1.25
+  attackRange: 2.5
+  comboHitboxRanges:
+  - 1.8
+  - 2
   attackCooldown: 3
   attackVariants: 2
+  lungeForceMultiplier: 1.2
+  tokenWeight: 1
+  comboHitsMin: 1
+  comboHitsMax: 3
+  rhythmBreakChance: 30
+  delayedSwingMin: 0.3
+  delayedSwingMax: 0.7
+  heavyBlueChance: 20
+  unblockableChance: 20
+  unblockableFinisherChance: 35
+  counterAttackChance: 25
+  guardPunishChance: 50
+  guardPunishThreshold: 1.5
   detectionRange: 10
   patrolRadius: 8
   patrolWaitTime: 2
   strafeTimeMin: 2
   strafeTimeMax: 4
+  prefersOuterRing: 0
   gapCloserRange: 10
   dropAggroRange: 15
   aggroMemoryDuration: 6
@@ -44,6 +66,10 @@ MonoBehaviour:
   yieldSpeedMultiplier: 0.25
   yieldMaxDuration: 0.8
   priorityId: 1
+  heavySmashTrigger: 
+  sweepTrigger: 
+  chargeTrigger: 
+  recoveryTrigger: 
   lightStaggerDuration: 0.4
   heavyStaggerDuration: 1
   heavyStaggerThreshold: 0.15
@@ -52,3 +78,13 @@ MonoBehaviour:
   gapCloserSpeed: 8
   gapCloserCooldown: 8
   freezeMaterial: {fileID: 2100000, guid: 265d14f0d8cc63a489d86039ddd4dc1e, type: 2}
+  stompRadius: 3.5
+  stompDamageMultiplier: 0.8
+  stompPushForce: 15
+  enragePushForce: 25
+  enrageKnockupForce: 0.5
+  unblockablePushForce: 30
+  unblockableKnockupForce: 0.8
+  BlueWarningVFX: {fileID: 0}
+  UnblockableWarningVFX: {fileID: 7686138855802705075, guid: 334e6f9c1a8106f4ba8e16ee3ff78312, type: 3}
+  enrageRoarVFX: {fileID: 0}

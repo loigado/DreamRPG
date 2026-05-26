@@ -15,23 +15,34 @@ MonoBehaviour:
   WeaponName: Cung
   WeaponAnimID: 3
   Type: 1
+  WeaponIcon: {fileID: -1548029095, guid: aea0de8f28f7b0f41b247710d2a0c53f, type: 3}
+  Skill1Icon: {fileID: 222967836, guid: 933d9cbb92a596347b58d3a4c2645a45, type: 3}
+  Skill2Icon: {fileID: 650459419, guid: 933d9cbb92a596347b58d3a4c2645a45, type: 3}
+  Skill3Icon: {fileID: 550417019, guid: 933d9cbb92a596347b58d3a4c2645a45, type: 3}
   Damage: 20
   StaminaCost: 15
   ComboAnimationNames:
   - Bow_Shoot
   DashAttackAnimName: 
-  ArrowPrefab: {fileID: 2013828501162641621, guid: ef1230c9a3475a04181bf5ab9c1f4492, type: 3}
-  ShootForce: 25
+  RollingAttackAnimName: 
+  skill1: {fileID: 11400000, guid: 17b08661ba11d51419f4e5b80c189569, type: 2}
+  skill2: {fileID: 11400000, guid: a8f0a579328e6a941b3d38ffd81a0a6b, type: 2}
+  skill3: {fileID: 11400000, guid: 03b32d67b6ae57443a6d086fa3ebda5f, type: 2}
+  ParryAnimName: Parry
+  BlockAnimName: Block_Idle
+  GuardBreakAnimName: GuardBreak
+  BlockHitAnimName: Block_Hit
+  ParryAttackAnimName: Parry_Attack
+  ParryAbsorbAnimName: Parry_Absorb
+  ShieldMaterial: {fileID: 2100000, guid: 8ef09a273d2bbb746a7abd4e7234f456, type: 2}
+  CounterAnimName: Unarmed_Counter
+  BlinkDisappearFX: {fileID: 0}
+  BlinkAppearFX: {fileID: 0}
+  HitAnimName: Sword_Hit
+  HeavyHitAnimName: Sword_Heavy_Hit
+  DeathAnimName: Sword_Death
   EquipAnimName: DrawBow
   UnequipAnimName: UnDrawBow
   LocomotionStateName: Bow_Locomotion
   JumpAnimName: Bow_Jump
   RollAnimName: Bow_Roll
-  BlockAnimName: Block_Idle
-  ParryAnimName: Parry
-  GuardBreakAnimName: GuardBreak
-  BlockHitAnimName: Block_Hit
-  ShieldMaterial: {fileID: 2100000, guid: 8ef09a273d2bbb746a7abd4e7234f456, type: 2}
-  skill1: {fileID: 11400000, guid: 17b08661ba11d51419f4e5b80c189569, type: 2}
-  skill2: {fileID: 11400000, guid: a8f0a579328e6a941b3d38ffd81a0a6b, type: 2}
-  skill3: {fileID: 11400000, guid: 03b32d67b6ae57443a6d086fa3ebda5f, type: 2}

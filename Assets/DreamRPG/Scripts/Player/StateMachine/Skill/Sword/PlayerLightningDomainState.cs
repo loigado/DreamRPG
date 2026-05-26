@@ -42,7 +42,7 @@ public class PlayerLightningDomainState : PlayerBaseState
         // Cắm xong rút lên -> Trở về trạng thái di chuyển
         if (timer >= animDuration)
         {
-            stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+            stateMachine.SwitchState(new PlayerMovementState(stateMachine));
         }
     }
 

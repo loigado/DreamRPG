@@ -19,8 +19,15 @@ public class PlayerDeathState : PlayerBaseState
         stateMachine.CurrentVelocity = Vector3.zero;
         stateMachine.VerticalVelocity = 0f;
 
-        // 2. Chạy animation chết
-        stateMachine.Animator.CrossFadeInFixedTime("Death", 0.2f);
+        // 2. Lấy animation chết từ vũ khí
+        string deathAnim = "Death";
+        WeaponData weapon = stateMachine.CurrentWeapon;
+        if (weapon != null && !string.IsNullOrEmpty(weapon.DeathAnimName))
+        {
+            deathAnim = weapon.DeathAnimName;
+        }
+
+        stateMachine.Animator.CrossFadeInFixedTime(deathAnim, 0.2f);
 
         // 3. Tắt input (Player không thể hành động khi chết)
         // InputReader vẫn enable nhưng state không xử lý input
@@ -49,7 +56,7 @@ public class PlayerDeathState : PlayerBaseState
             // Hoặc respawn tại checkpoint:
             // stateMachine.PlayerHP.Revive(0.5f);
             // stateMachine.DisableInvincibility();
-            // stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+            // stateMachine.SwitchState(new PlayerMovementState(stateMachine));
         }
     }
 

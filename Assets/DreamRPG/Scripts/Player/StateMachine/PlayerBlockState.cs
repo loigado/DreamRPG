@@ -30,7 +30,7 @@ public class PlayerBlockState : PlayerBaseState
     private bool wasHardLocking = false; // 🟢 FIX: Giữ lại để biết lúc nào đổi locomotion
 
     // Tuning
-    private const float PARRY_WINDOW = 0.2f;      // 200ms perfect parry
+    private const float PARRY_WINDOW = 0.2f;      // 400ms perfect parry (GoW Normal)
     private const float BLOCK_STAMINA_DRAIN = 5f;  // Stamina/giây khi giữ block
     private const float BLOCK_DAMAGE_REDUCTION = 0.8f; // Giảm 80% damage
     private const float BLOCK_MOVE_SPEED = 0.3f;   // 30% tốc độ
@@ -83,6 +83,7 @@ public class PlayerBlockState : PlayerBaseState
         {
             stateMachine.Animator.SetLayerWeight(1, 1f);
             stateMachine.Animator.CrossFadeInFixedTime(blockAnimName, 0.1f, 1); 
+            Debug.Log($"<color=cyan>🛡️ BLOCK STATE: Đang phát animation [{blockAnimName}] trên Layer 1</color>");
 
             // Chạy locomotion đúng loại
             string locoName = wasHardLocking ? "Combat_Locomotion" : (stateMachine.CurrentWeapon != null ? stateMachine.CurrentWeapon.LocomotionStateName : "Unarmed_Locomotion");
@@ -213,57 +214,98 @@ public class PlayerBlockState : PlayerBaseState
         // 6. THẢ NÚT BLOCK → về MoveState
         if (!stateMachine.InputReader.IsHoldingBlock)
         {
-            stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+            stateMachine.SwitchState(new PlayerMovementState(stateMachine));
         }
     }
 
     /// <summary>
-    /// Gọi từ bên ngoài khi Player bị đánh trong lúc Block.
-    /// Trả về true nếu đỡ được (hoặc parry), false nếu guard break/đánh sau lưng.
+    /// Trả về true nếu đỡ/parry/vỡ thủ thành công (Player không mất HP).
+    /// Trả về false nếu là Đòn Đỏ hoặc đánh sau lưng (Player mất HP).
     /// </summary>
-    public bool HandleBlockedHit(float damage, Vector3 attackerPos)
+    public bool HandleBlockedHit(float damage, Vector3 attackerPos, AttackGlint glint = AttackGlint.Normal)
     {
-        // 🟢 FIX: Kiểm tra hướng tấn công. Đánh sau lưng -> Vỡ block!
-        Vector3 attackDir = (attackerPos - stateMachine.transform.position).normalized;
-        attackDir.y = 0; // Bỏ qua trục Y
-        float angle = Vector3.Angle(stateMachine.transform.forward, attackDir);
-
-        if (angle > BLOCK_ANGLE_LIMIT)
+        // 🟢 1. NẾU LÀ ĐÒN ĐỎ -> XUYÊN THỦNG PHÒNG NGỰ
+        if (glint == AttackGlint.Red)
         {
-            Debug.Log($"<color=red>💥 Bị đánh lén từ phía sau! Góc: {angle}</color>");
-            // Mất máu toàn phần + dính hiệu ứng bị đánh văng
-            if (stateMachine.PlayerHP != null) stateMachine.PlayerHP.TakeDamage(damage);
-            stateMachine.SwitchState(new PlayerImpactState(stateMachine, attackerPos));
-            return false;
+            Debug.Log("<color=red>❌ ĐÒN ĐỎ! Xuyên thủng mọi hàng phòng ngự!</color>");
+            return false; // Trả về false để bắt Kratos ăn sát thương máu
         }
+
+        // Kiểm tra góc đỡ đòn (Chống đánh lén từ sau lưng)
+        Vector3 dirToAttacker = (attackerPos - stateMachine.transform.position).normalized;
+        float angle = Vector3.Angle(stateMachine.transform.forward, dirToAttacker);
+        if (angle > BLOCK_ANGLE_LIMIT) return false; 
 
         if (parryWindowActive && !didParry)
         {
-            // PERFECT PARRY!
+            // 🟢 2. PERFECT PARRY THÀNH CÔNG! (Parry được cả đòn Xanh)
             didParry = true;
-            if (stateMachine.Animator.layerCount > 1) stateMachine.Animator.CrossFadeInFixedTime(parryAnimName, 0.05f, 1);
-            else stateMachine.Animator.CrossFadeInFixedTime(parryAnimName, 0.05f, 0);
+
+            Transform parriedEnemyTransform = null;
+            Collider[] hits = Physics.OverlapSphere(stateMachine.transform.position, 4f, LayerMask.GetMask("Enemy"));
+            foreach (var hit in hits)
+            {
+                EnemyStateMachine enemy = hit.GetComponentInParent<EnemyStateMachine>();
+                if (enemy != null && enemy.currentState is EnemyAttackState)
+                {
+                    enemy.TriggerParryStagger();
+                    if (parriedEnemyTransform == null) parriedEnemyTransform = enemy.transform;
+                }
+            }
+
+            stateMachine.SwitchState(new PlayerParryDecisionState(stateMachine, parriedEnemyTransform));
+            if (stateMachine.Stamina != null) stateMachine.Stamina.HealStamina(40f); 
+
+            Debug.Log("<color=yellow>✨ PARRY THÀNH CÔNG! Đang chờ quyết định: Phản công hay Hút năng lượng?</color>");
             return true; 
         }
 
-        // Block bình thường — giảm damage
+        // 🟢 3. NẾU LÀ ĐÒN XANH MÀ CHỈ GIỮ NÚT ĐỠ (BỎ LỠ PARRY) -> VỠ THỦ NGAY LẬP TỨC
+        if (glint == AttackGlint.Blue)
+        {
+            Debug.Log("<color=orange>🛡️ VỠ THỦ! Đòn Xanh quá nặng, giữ thủ sẽ bị phá vỡ!</color>");
+            TriggerGuardBreak(attackerPos);
+            return true; // Tính là đã đỡ (không mất HP), nhưng bị phạt vỡ thủ (choáng)
+        }
+
+        // 🟢 4. ĐỠ ĐÒN BÌNH THƯỜNG (BLOCK)
         float reducedDamage = damage * (1f - BLOCK_DAMAGE_REDUCTION);
         if (stateMachine.PlayerHP != null)
             stateMachine.PlayerHP.TakeDamage(reducedDamage);
 
-        // Drain thêm stamina
-        stateMachine.Stamina.UseStamina(damage * 0.3f);
+        stateMachine.Stamina.UseStamina(damage * 1.5f); 
 
-        // 🟢 FIX: Chạy animation Block Hit (giật nhẹ)
+        // 🟢 5. KIỂM TRA VỠ THỦ VÌ HẾT STAMINA
+        if (!stateMachine.Stamina.HasEnoughStamina(0.1f))
+        {
+            Debug.Log("<color=orange>🛡️ VỠ THỦ! Cạn kiệt thể lực!</color>");
+            TriggerGuardBreak(attackerPos);
+            return true; 
+        }
+
+        // 🟢 6. CÒN THỂ LỰC -> GIẬT NHẸ RỒI ĐỠ TIẾP
         if (!string.IsNullOrEmpty(blockHitAnimName))
         {
-            if (stateMachine.Animator.layerCount > 1) stateMachine.Animator.CrossFadeInFixedTime(blockHitAnimName, 0.1f, 1);
-            else stateMachine.Animator.CrossFadeInFixedTime(blockHitAnimName, 0.1f, 0);
+            if (stateMachine.Animator.layerCount > 1) 
+                stateMachine.Animator.CrossFadeInFixedTime(blockHitAnimName, 0.1f, 1);
+            else 
+                stateMachine.Animator.CrossFadeInFixedTime(blockHitAnimName, 0.1f, 0);
         }
 
         return true;
     }
 
+    // Hàm phụ trợ xử lý Vỡ Thủ
+    private void TriggerGuardBreak(Vector3 attackerPos)
+    {
+        if (stateMachine.ShieldVFX != null) stateMachine.ShieldVFX.SetActive(false);
+        if (stateMachine.Animator.layerCount > 1) 
+            stateMachine.Animator.CrossFadeInFixedTime(guardBreakAnimName, 0.1f, 1);
+        else 
+            stateMachine.Animator.CrossFadeInFixedTime(guardBreakAnimName, 0.1f, 0);
+
+        stateMachine.SwitchState(new PlayerImpactState(stateMachine, attackerPos));
+    }
     private void OnRollWhileBlocking()
     {
         if (stateMachine.Stamina.HasEnoughStamina(25f))

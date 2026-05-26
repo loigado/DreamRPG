@@ -107,7 +107,7 @@ public class PlayerIceAxeUltimateState : PlayerBaseState
             postReleaseTimer += deltaTime;
             if (postReleaseTimer >= POST_RELEASE_DELAY)
             {
-                stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+                stateMachine.SwitchState(new PlayerMovementState(stateMachine));
             }
         }
     }
@@ -142,8 +142,8 @@ public class PlayerIceAxeUltimateState : PlayerBaseState
         {
             if (hit.TryGetComponent<EnemyHealth>(out EnemyHealth health))
             {
-                // Sát thương nổ cực mạnh
-                health.TakeDamage(30f * damageMult, stateMachine.transform.position);
+                // Sát thương nổ cực mạnh, luôn là đòn nặng
+                health.TakeDamage(30f * damageMult, stateMachine.transform.position, true);
                 // 🧊 Đóng băng quái sau vụ nổ
                 health.ApplyFreeze(skill.freezeDuration * (1f + chargeRatio));
             }

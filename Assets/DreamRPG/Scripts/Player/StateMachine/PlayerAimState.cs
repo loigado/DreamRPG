@@ -34,7 +34,12 @@ public class PlayerAimState : PlayerBaseState
             stateMachine.transform.rotation = Quaternion.LookRotation(camForward);
         }
 
-        // 🟢 DÙNG CACHED COMPONENT
+        // 🟢 DÙNG CACHED COMPONENT VÀ ĐẢM BẢO GAMEOBJECT ĐƯỢC BẬT
+        if (stateMachine.AimCamera != null)
+        {
+            stateMachine.AimCamera.SetActive(true);
+        }
+        
         if (stateMachine.CachedAimCam != null) 
         {
             stateMachine.CachedAimCam.Priority = 100; 
@@ -125,7 +130,7 @@ public class PlayerAimState : PlayerBaseState
                 if ((stateInfo.shortNameHash == UnequipArrowHash && stateInfo.normalizedTime >= 0.9f) || stateTimer > 1.2f)
                 {
                     CleanUpAimState();
-                    stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+                    stateMachine.SwitchState(new PlayerMovementState(stateMachine));
                 }
                 break;
         }
@@ -202,6 +207,11 @@ public class PlayerAimState : PlayerBaseState
         {
             stateMachine.CachedAimCam.Lens.FieldOfView = 40f;
             stateMachine.CachedAimCam.Priority = 0; 
+        }
+
+        if (stateMachine.AimCamera != null)
+        {
+            stateMachine.AimCamera.SetActive(false);
         }
 
         if (stateMachine.CrosshairUI != null) stateMachine.CrosshairUI.SetActive(false);

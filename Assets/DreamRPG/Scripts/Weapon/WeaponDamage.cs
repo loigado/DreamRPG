@@ -6,8 +6,13 @@ using UnityEngine;
 public class WeaponDamage : MonoBehaviour
 {
     private Collider myCollider;
-    private float currentDamage; // 🟢 ĐÃ THÊM LẠI: Biến lưu sát thương
+    private float currentDamage; 
     private List<Collider> alreadyHit = new List<Collider>();
+    private bool isHitboxOpen = false; // Cờ kiểm soát trạng thái quét liên tục
+
+    [Header("Weapon Type Settings")]
+    [Tooltip("Nếu tích chọn, vũ khí này sẽ LUÔN gây đòn nặng (Heavy Hit) lên quái, ví dụ Rìu")]
+    public bool isHeavyWeapon = false;
 
     [Header("Game Feel Settings")]
     public float hitStopDuration = 0.05f; 
@@ -22,85 +27,65 @@ public class WeaponDamage : MonoBehaviour
         if (weaponTrail != null) weaponTrail.emitting = false;
     }
 
-    // 🟢 ĐÃ SỬA LẠI: Thêm (float damage) để nhận sát thương từ WeaponHolder
     public void OpenHitbox(float damage)
     {
-        Debug.Log("<color=green>🟩 LƯỠI VŨ KHÍ ĐÃ BẬT!</color>");
-        currentDamage = damage; // Nhận sát thương và lưu vào biến
+        currentDamage = damage; 
         alreadyHit.Clear();
         myCollider.enabled = true;
+        isHitboxOpen = true; // Bật cờ quét chủ động
         if (weaponTrail != null) weaponTrail.emitting = true;
     }
 
     public void CloseHitbox()
     {
-        Debug.Log("<color=gray>⬛ ĐÃ TẮT LƯỠI VŨ KHÍ!</color>"); 
         myCollider.enabled = false;
+        isHitboxOpen = false; // Tắt cờ quét
         if (weaponTrail != null) weaponTrail.emitting = false;
     }
 
-    private void OnTriggerEnter(Collider other)
+    private void Update()
     {
-        Debug.Log($"<color=white>Triggers hit: {other.name} (Root: {other.transform.root.name})</color>");
-        
-        if (other.transform.root == transform.root) 
-        {
-            Debug.Log($"<color=gray>Bỏ qua: chạm vào chính mình hoặc vũ khí của mình.</color>");
-            return;
-        }
-        
-        if (alreadyHit.Contains(other)) return;
-        alreadyHit.Add(other);
+        // Nếu hitbox chưa mở, không tốn hiệu năng quét
+        if (!isHitboxOpen) return;
 
-        IDamageable target = other.GetComponentInParent<IDamageable>();
-        
-        if (target != null)
-        {
-            Debug.Log($"<color=green>Tìm thấy IDamageable trên {other.name}!</color>");
-            target.TakeDamage(currentDamage, transform.root.position);
-            StartCoroutine(HitStopRoutine(other));
+        // 🟢 AAA Polish: Quét liên tục một khối hộp theo kích thước chuẩn của Collider vũ khí
+        Collider[] hits = Physics.OverlapBox(
+            myCollider.bounds.center, 
+            myCollider.bounds.extents, 
+            transform.rotation, 
+            LayerMask.GetMask("Enemy")
+        );
 
-            if (hitVFXPrefab != null)
-            {
-                Vector3 hitPoint = other.ClosestPoint(transform.position);
-                
-                // 🟢 FIX: Gọi hiệu ứng từ Pool
-                ObjectPoolManager.Instance.SpawnFromPool(hitVFXPrefab, hitPoint, Quaternion.identity);
-                
-                // ❌ ĐÃ XÓA: Destroy(vfx, 2f); 
-                // Hiệu ứng này sẽ tự cất vào kho thông qua script VFXAutoDestroy gắn trên nó.
-            }
-        }
-        else
+        foreach (Collider hit in hits)
         {
-            Debug.Log($"<color=red>KHÔNG tìm thấy IDamageable ở cha của {other.name}! Root là: {other.transform.root.name}</color>");
-            // Liệt kê thử xem trên Root có những script gì để bắt bệnh
-            Component[] comps = other.transform.root.GetComponents<Component>();
-            string compNames = "";
-            foreach (var c in comps)
+            if (!alreadyHit.Contains(hit))
             {
-                if (c != null) compNames += c.GetType().Name + ", ";
+                alreadyHit.Add(hit); // Tránh đa sát thương trong 1 đòn vung
+                
+                IDamageable damageable = hit.GetComponentInParent<IDamageable>();
+                if (damageable != null)
+                {
+                    // 🟢 Truyền cờ isHeavyWeapon vào
+                    damageable.TakeDamage(currentDamage, transform.position, isHeavyWeapon);
+                    
+                    // Tạo hiệu ứng chém trúng (VFX) từ Pool nếu có cấu hình
+                    if (hitVFXPrefab != null && ObjectPoolManager.Instance != null)
+                    {
+                        Vector3 hitPoint = hit.ClosestPointOnBounds(myCollider.bounds.center);
+                        ObjectPoolManager.Instance.SpawnFromPool(hitVFXPrefab, hitPoint, Quaternion.identity);
+                    }
+
+                    StartCoroutine(HitStopRoutine(hit)); 
+                }
             }
-            Debug.Log($"<color=yellow>Các component có trên {other.transform.root.name}: {compNames}</color>");
         }
     }
 
-    private void OnDisable()
-    {
-        // Cleanup: không cần reset timeScale nữa
-    }
-
-    /// <summary>
-    /// Per-entity hit freeze — chỉ freeze Animator của QUÁI BỊ ĐÁNH + Player.
-    /// KHÔNG ảnh hưởng Time.timeScale toàn cục (AAA standard).
-    /// </summary>
     private IEnumerator HitStopRoutine(Collider hitTarget)
     {
-        // 🟢 FIX: Freeze Animator của CON QUÁI bị chém (lấy từ collider hit, KHÔNG phải từ vũ khí)
         Animator targetAnim = hitTarget != null ? hitTarget.GetComponentInParent<Animator>() : null;
         if (targetAnim != null) targetAnim.speed = 0f;
 
-        // Freeze Player (game feel)
         Animator playerAnim = null;
         var player = GameObject.FindGameObjectWithTag("Player");
         if (player != null) playerAnim = player.GetComponentInChildren<Animator>();
@@ -108,7 +93,6 @@ public class WeaponDamage : MonoBehaviour
 
         yield return new WaitForSecondsRealtime(hitStopDuration);
 
-        // Unfreeze
         if (targetAnim != null) targetAnim.speed = 1f;
         if (playerAnim != null) playerAnim.speed = 1f;
     }

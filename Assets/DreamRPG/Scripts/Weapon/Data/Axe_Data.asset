@@ -15,6 +15,10 @@ MonoBehaviour:
   WeaponName: Axe
   WeaponAnimID: 2
   Type: 0
+  WeaponIcon: {fileID: -875497682, guid: aea0de8f28f7b0f41b247710d2a0c53f, type: 3}
+  Skill1Icon: {fileID: -1950669111, guid: 3310d402fcfed4844a62a9d754488a3d, type: 3}
+  Skill2Icon: {fileID: -1385679185, guid: 3310d402fcfed4844a62a9d754488a3d, type: 3}
+  Skill3Icon: {fileID: 522890536, guid: 3310d402fcfed4844a62a9d754488a3d, type: 3}
   Damage: 20
   StaminaCost: 35
   ComboAnimationNames:
@@ -22,18 +26,25 @@ MonoBehaviour:
   - HeavyAttack2
   - HeavyAttack3
   DashAttackAnimName: AxeDashAttack
-  ArrowPrefab: {fileID: 0}
-  ShootForce: 25
+  RollingAttackAnimName: 
+  skill1: {fileID: 11400000, guid: f2e587651b12e714e8d748cb685a176b, type: 2}
+  skill2: {fileID: 11400000, guid: bbb839dd514ab5646a00e572d0b91c5e, type: 2}
+  skill3: {fileID: 11400000, guid: a29eaba5cd4e0ae4690f80119b3bbdbd, type: 2}
+  ParryAnimName: Sword_Parry
+  BlockAnimName: Axe_Block_Idle
+  GuardBreakAnimName: GuardBreak
+  BlockHitAnimName: Axe_Block_Impact
+  ParryAttackAnimName: Sword_Parry_Attack
+  ParryAbsorbAnimName: Sword_Absorb
+  ShieldMaterial: {fileID: 2100000, guid: 265d14f0d8cc63a489d86039ddd4dc1e, type: 2}
+  CounterAnimName: Unarmed_Counter
+  BlinkDisappearFX: {fileID: 0}
+  BlinkAppearFX: {fileID: 0}
+  HitAnimName: Sword_Hit
+  HeavyHitAnimName: Sword_Heavy_Hit
+  DeathAnimName: Sword_Death
   EquipAnimName: DrawAxe
   UnequipAnimName: UnDrawAxe
   LocomotionStateName: GreatSword_Locomotion
   JumpAnimName: GreatSword_Jump
   RollAnimName: GreatSword_Roll
-  BlockAnimName: Axe_Block_Idle
-  ParryAnimName: Parry
-  GuardBreakAnimName: GuardBreak
-  BlockHitAnimName: Axe_Block_Impact
-  ShieldMaterial: {fileID: 2100000, guid: 265d14f0d8cc63a489d86039ddd4dc1e, type: 2}
-  skill1: {fileID: 11400000, guid: f2e587651b12e714e8d748cb685a176b, type: 2}
-  skill2: {fileID: 11400000, guid: bbb839dd514ab5646a00e572d0b91c5e, type: 2}
-  skill3: {fileID: 11400000, guid: a29eaba5cd4e0ae4690f80119b3bbdbd, type: 2}

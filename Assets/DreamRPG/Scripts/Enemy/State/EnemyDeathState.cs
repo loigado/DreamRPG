@@ -1,74 +1,106 @@
 using UnityEngine;
+using System.Collections.Generic;
 
-/// <summary>
-/// EnemyDeathState — Quái chết: dừng mọi thứ, giải phóng tài nguyên, fade out.
-///
-/// Logic:
-///   • Tắt Agent/Controller
-///   • Giải phóng Token + Slot
-///   • Hủy đăng ký khỏi AIDirector
-///   • Chờ animation chết xong → Destroy (hoặc pool)
-/// </summary>
 public class EnemyDeathState : EnemyState
 {
-    private float destroyTimer = 3f;
+    private float despawnTimer = 3f; 
+    private bool hasCalculatedLength = false;
+    private bool isDead = false;
+    
+    // 🟢 Lưu trữ danh sách các Collider đã bị tắt để phục hồi khi Object Pool hồi sinh quái
+    private List<Collider> disabledColliders = new List<Collider>();
 
     public EnemyDeathState(EnemyStateMachine stateMachine) : base(stateMachine) { }
 
     public override void Enter()
     {
-        // === 1. DỪNG MỌI DI CHUYỂN ===
+        isDead = false;
+        hasCalculatedLength = false;
+        disabledColliders.Clear();
+        
+        // 1. Dừng mọi di chuyển & Tắt NavMesh
         stateMachine.ManualVelocity = Vector3.zero;
-
-        if (stateMachine.Agent.isActiveAndEnabled && stateMachine.Agent.isOnNavMesh)
+        if (stateMachine.Agent != null && stateMachine.Agent.isOnNavMesh)
         {
-            stateMachine.Agent.ResetPath();
             stateMachine.Agent.isStopped = true;
+            stateMachine.Agent.enabled = false; 
         }
-        stateMachine.Agent.enabled     = false;
-        stateMachine.Controller.enabled = false;
 
-        // === 2. GIẢI PHÓNG TÀI NGUYÊN ===
-        // Release Token (chỉ release nếu đang thật sự giữ — AIDirector kiểm tra)
-        if (AIDirector.Instance != null)
-            AIDirector.Instance.ReleaseToken(stateMachine);
+        // Tắt chướng ngại vật NavMesh (nếu có) để không cản đường AI khác
+        if (stateMachine.Obstacle != null) stateMachine.Obstacle.enabled = false;
 
-        // Release Slot
-        if (EnemySlotManager.Instance != null && stateMachine.ReservedSlotIndex >= 0)
+        // =========================================================
+        // 🟢 AAA FIX: DỌN SẠCH MỌI VẬT CẢN VẬT LÝ (GHOST OF TSUSHIMA)
+        // =========================================================
+        
+        // Tắt CharacterController chính
+        if (stateMachine.Controller != null) stateMachine.Controller.enabled = false;
+
+        // Quét toàn bộ cơ thể quái (bao gồm cả khiên, vũ khí, hitbox)
+        Collider[] allColliders = stateMachine.GetComponentsInChildren<Collider>();
+        foreach (Collider col in allColliders)
         {
-            EnemySlotManager.Instance.ReleaseSlot(stateMachine.ReservedSlotIndex);
-            stateMachine.ReservedSlotIndex = -1;
+            // Chỉ tắt và lưu lại những Collider đang thực sự hoạt động
+            if (col.enabled) 
+            {
+                col.enabled = false;
+                disabledColliders.Add(col);
+            }
         }
 
-        // Hủy đăng ký khỏi AIDirector
-        if (AIDirector.Instance != null)
-            AIDirector.Instance.UnregisterEnemy(stateMachine);
+        stateMachine.PlayerTarget = null;
 
-        // === 3. ANIMATION CHẾT ===
-        stateMachine.Anim.SetTrigger("Die");
-
-        // Tắt Collider để Player không bị chặn bởi xác chết
-        Collider col = stateMachine.GetComponent<Collider>();
-        if (col != null) col.enabled = false;
-
-        // Disable tất cả collider con (nếu có)
-        foreach (var c in stateMachine.GetComponentsInChildren<Collider>())
-            c.enabled = false;
+        // 3. Kích hoạt hoạt ảnh chết
+        stateMachine.Anim.SetTrigger(EnemyConstants.HashDie); 
     }
 
     public override void Tick(float deltaTime)
     {
-        // Chờ animation chết xong rồi tự hủy
-        destroyTimer -= deltaTime;
-        if (destroyTimer <= 0f)
+        if (isDead) return;
+
+        // Đọc độ dài Clip Animation thực tế
+        AnimatorStateInfo stateInfo = stateMachine.Anim.GetCurrentAnimatorStateInfo(0);
+
+        // Chờ Animator chuyển thành công vào state "Die"
+        if (!hasCalculatedLength && (stateInfo.IsName("Die") || stateInfo.shortNameHash == EnemyConstants.HashDie))
         {
-            // Có thể thay bằng Object Pooling: gameObject.SetActive(false)
-            Object.Destroy(stateMachine.gameObject);
+            hasCalculatedLength = true;
+            // Cộng thêm 2 giây nằm trên mặt đất trước khi bốc hơi
+            despawnTimer = stateInfo.length + 2.0f; 
+        }
+
+        // Đếm ngược
+        despawnTimer -= deltaTime;
+        if (despawnTimer <= 0f)
+        {
+            isDead = true;
+            DespawnEnemy();
+        }
+    }
+
+    private void DespawnEnemy()
+    {
+        if (ObjectPoolManager.Instance != null)
+        {
+            ObjectPoolManager.Instance.ReturnToPool(stateMachine.gameObject);
+        }
+        else
+        {
+            stateMachine.gameObject.SetActive(false);
         }
     }
 
     public override void Exit()
     {
-        // Không bao giờ exit bình thường — Destroy sẽ xóa trước
+        // Phục hồi lại Component phòng khi dùng Object Pool hồi sinh
+        if (stateMachine.Controller != null) stateMachine.Controller.enabled = true;
+        if (stateMachine.Agent != null) stateMachine.Agent.enabled = true;
+        
+        // 🟢 Bật lại chính xác các Collider đã bị tắt lúc chết
+        foreach (Collider col in disabledColliders)
+        {
+            if (col != null) col.enabled = true;
+        }
+        disabledColliders.Clear();
     }
 }

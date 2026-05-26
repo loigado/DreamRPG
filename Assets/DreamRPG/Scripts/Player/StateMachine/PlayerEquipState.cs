@@ -42,12 +42,12 @@ public class PlayerEquipState : PlayerBaseState
         {
             if (stateInfo.normalizedTime >= 0.85f) 
             {
-                stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+                stateMachine.SwitchState(new PlayerMovementState(stateMachine));
             }
         }
         else if (timePassed > 0.5f)
         {
-            stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+            stateMachine.SwitchState(new PlayerMovementState(stateMachine));
         }
     }
 

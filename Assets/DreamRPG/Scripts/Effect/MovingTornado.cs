@@ -13,12 +13,11 @@ public class MovingTornado : MonoBehaviour
     public float tickRate = 0.3f;       
     private float damagePerTick;
     private float tickTimer;
-    private float lifeTimer; // 🟢 FIX: Thêm bộ đếm tuổi thọ tự thân
+    private float lifeTimer;
 
     private List<Collider> trappedEnemies = new List<Collider>();
     private List<IDamageable> damageableTargets = new List<IDamageable>();
 
-    // 🟢 FIX: Reset lại mọi danh sách khi lôi từ trong kho ra
     private void OnEnable()
     {
         lifeTimer = duration; 
@@ -30,20 +29,16 @@ public class MovingTornado : MonoBehaviour
     public void Setup(float damage)
     {
         damagePerTick = damage;
-
         // Nhấc cơn lốc lên cao ngay khi vừa sinh ra
         transform.position += new Vector3(0, heightOffset, 0);
-
-        // ❌ XÓA LỆNH: Destroy(gameObject, duration);
     }
 
     void Update()
     {
-        // 🟢 FIX: Quản lý việc biến mất bằng tuổi thọ
+        // 1. Quản lý việc biến mất bằng tuổi thọ
         lifeTimer -= Time.deltaTime;
         if (lifeTimer <= 0)
         {
-            // Cất vào kho, nếu lỡ quên tạo kho thì mới Destroy để tránh lỗi
             if (ObjectPoolManager.Instance != null)
                 ObjectPoolManager.Instance.ReturnToPool(gameObject);
             else
@@ -51,18 +46,20 @@ public class MovingTornado : MonoBehaviour
             return;
         }
 
-        // 1. LẤY HƯỚNG BAY NHƯNG KHÓA TRỤC Y (Chỉ lướt trên mặt đất)
+        // 2. Di chuyển Lốc Xoáy
         Vector3 moveDirection = transform.forward;
         moveDirection.y = 0f; 
         moveDirection.Normalize(); 
-
         transform.position += moveDirection * moveSpeed * Time.deltaTime;
 
-        // 2. CUỐN QUÁI ĐI THEO
+        // 3. CUỐN QUÁI ĐI THEO
         for (int i = trappedEnemies.Count - 1; i >= 0; i--)
         {
+            // Kiểm tra null an toàn với Collider (Vì Collider kế thừa từ UnityEngine.Object)
             if (trappedEnemies[i] != null)
             {
+                // Lưu ý: Nếu quái có CharacterController, đôi khi lệnh Lerp transform sẽ bị Controller cản lại.
+                // Nếu thấy quái không bị hút mượt, bạn có thể phải báo cho quái biết nó đang bị hút để tạm tắt Controller đi.
                 trappedEnemies[i].transform.position = Vector3.Lerp(
                     trappedEnemies[i].transform.position, 
                     transform.position, 
@@ -75,7 +72,7 @@ public class MovingTornado : MonoBehaviour
             }
         }
 
-        // 3. GIẬT MÁU THEO THỜI GIAN
+        // 4. GIẬT MÁU THEO THỜI GIAN
         tickTimer += Time.deltaTime;
         if (tickTimer >= tickRate)
         {
@@ -88,10 +85,18 @@ public class MovingTornado : MonoBehaviour
     {
         for (int i = damageableTargets.Count - 1; i >= 0; i--)
         {
-            if (damageableTargets[i] != null)
+            // 🟢 FIX QUAN TRỌNG: Ép kiểu về UnityEngine.Object để check null chuẩn xác!
+            UnityEngine.Object unityObj = damageableTargets[i] as UnityEngine.Object;
+            
+            if (unityObj != null)
+            {
                 damageableTargets[i].TakeDamage(damagePerTick, transform.position);
+            }
             else
+            {
+                // Nếu quái đã bị Destroy, loại bỏ khỏi danh sách
                 damageableTargets.RemoveAt(i);
+            }
         }
     }
 

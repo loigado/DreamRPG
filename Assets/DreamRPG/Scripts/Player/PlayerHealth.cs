@@ -14,6 +14,9 @@ public class PlayerHealth : MonoBehaviour
 {
     [Header("Health Settings")]
     public float MaxHealth = 100f;
+    
+    // Cheat
+    public static float GlobalCheatDamageBonus = 0f;
 
     public float CurrentHealth { get; private set; }
     public bool IsDead { get; private set; }

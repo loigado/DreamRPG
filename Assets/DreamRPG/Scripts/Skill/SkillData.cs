@@ -11,6 +11,7 @@ public class SkillData : ScriptableObject
     
     public float cooldownTime = 5f;
     public float staminaCost = 20f;
+    public float elementCost = 50f; // Số lượng nguyên tố tiêu hao (nếu kỹ năng có hệ)
     public string animationName; // Hoạt ảnh lúc VUNG TAY PHÓNG KIẾM
     
     [Header("Blink Settings (Cho kỹ năng phóng kiếm)")]

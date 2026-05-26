@@ -1,51 +1,33 @@
 using UnityEngine;
 
-/// <summary>
-/// EnemyStrafeState — Vờn quanh Player (AAA chuẩn).
-///
-/// Tích hợp đầy đủ:
-///   1. Slot System — di chuyển đến vị trí Slot + Pacing offset
-///   2. Separation — V_final = V_goal * yield + V_separation
-///   3. Yielding — quái ưu tiên thấp giảm tốc nhường đường
-///   4. Off-screen Push — ép quái ngoài Camera vào trước mặt
-/// </summary>
 public class EnemyStrafeState : EnemyState
 {
-    // --- Timers ---
     private float maneuverTimer;
     private float feintTimer;
 
-    // --- Slot ---
     private int  reservedSlot = -1;
     private bool isInnerRing;
-
-    // --- Strafe Direction (CACHED — không random mỗi frame) ---
     private int strafeDirection;
 
-    // --- Pacing ---
     private float pacingTimer;
     private float targetPacingOffset;
     private float currentPacingOffset;
 
-    // --- Yielding ---
     private float yieldTimer;
     private bool  isYielding;
 
-    // --- Separation buffer (tái sử dụng) ---
+    private float bounceCooldown; 
     private readonly Collider[] yieldCheckBuffer = new Collider[15];
 
     public EnemyStrafeState(EnemyStateMachine stateMachine) : base(stateMachine) { }
 
     public override void Enter()
     {
-        // Timers
         maneuverTimer = Random.Range(stateMachine.Stats.strafeTimeMin, stateMachine.Stats.strafeTimeMax);
         feintTimer    = Random.Range(stateMachine.Stats.feintIntervalMin, stateMachine.Stats.feintIntervalMax);
 
-        // Vòng trong/ngoài
-        isInnerRing = Random.value > 0.4f;
+        isInnerRing = stateMachine.Stats.prefersOuterRing ? false : (Random.value > 0.4f);
 
-        // Đăng ký Slot
         if (EnemySlotManager.Instance != null)
         {
             reservedSlot = EnemySlotManager.Instance.ReserveSlot(stateMachine, isInnerRing);
@@ -59,48 +41,37 @@ public class EnemyStrafeState : EnemyState
             }
         }
 
-        // Strafe direction: CACHE 1 lần duy nhất, không random mỗi frame
         Vector3 dirToEnemy = (stateMachine.transform.position - stateMachine.PlayerTarget.position).normalized;
         float angleToRight = Vector3.Angle(stateMachine.PlayerTarget.right, dirToEnemy);
         strafeDirection = angleToRight < 90f ? 1 : -1;
 
-        // Pacing
         pacingTimer         = 0f;
         targetPacingOffset  = 0f;
         currentPacingOffset = 0f;
         isYielding          = false;
         yieldTimer          = 0f;
+        bounceCooldown      = 0f; 
 
-        // Dừng NavMesh Agent
-        if (stateMachine.Agent.isActiveAndEnabled)
-            stateMachine.Agent.isStopped = true;
+        if (stateMachine.Agent.isActiveAndEnabled) stateMachine.Agent.isStopped = true;
     }
 
     public override void Tick(float deltaTime)
     {
         if (stateMachine.PlayerTarget == null) return;
 
-        // Cập nhật aggro
-        stateMachine.LastKnownPlayerPos = stateMachine.PlayerTarget.position;
+        if (bounceCooldown > 0f) bounceCooldown -= deltaTime;
 
-        // 1. NHÌN VỀ PLAYER
+        stateMachine.LastKnownPlayerPos = stateMachine.PlayerTarget.position;
         FacePlayer(deltaTime);
 
-        // 2. FEINT
         feintTimer -= deltaTime;
         if (feintTimer <= 0)
         {
-            // stateMachine.Anim.SetTrigger("Feint");
             feintTimer = Random.Range(stateMachine.Stats.feintIntervalMin, stateMachine.Stats.feintIntervalMax);
         }
 
-        // 3. PACING
         UpdatePacing(deltaTime);
-
-        // 4. V_final = V_goal * yield + V_separation
         ComputeAndSetManualVelocity(deltaTime);
-
-        // 5. EXIT CONDITIONS
         CheckExitConditions(deltaTime);
     }
 
@@ -114,21 +85,10 @@ public class EnemyStrafeState : EnemyState
         stateMachine.ManualVelocity    = Vector3.zero;
     }
 
-    // =========================================================
-    // HELPERS
-    // =========================================================
-
     private void FacePlayer(float deltaTime)
     {
         stateMachine.LookAtTarget = stateMachine.PlayerTarget.position + Vector3.up * 1.2f;
-
-        Vector3 dirToPlayer = (stateMachine.PlayerTarget.position - stateMachine.transform.position);
-        dirToPlayer.y = 0f;
-        if (dirToPlayer.sqrMagnitude < 0.01f) return;
-
-        Quaternion targetRot = Quaternion.LookRotation(dirToPlayer.normalized);
-        stateMachine.transform.rotation = Quaternion.Slerp(
-            stateMachine.transform.rotation, targetRot, deltaTime * 8f);
+        stateMachine.FaceTarget(stateMachine.PlayerTarget.position);
     }
 
     private void UpdatePacing(float deltaTime)
@@ -138,8 +98,6 @@ public class EnemyStrafeState : EnemyState
         {
             targetPacingOffset = Random.Range(-1.5f, 2f);
             pacingTimer        = Random.Range(1.5f, 3f);
-
-            // Lâu lâu đổi hướng strafe
             if (Random.value > 0.7f) strafeDirection *= -1;
         }
         currentPacingOffset = Mathf.Lerp(currentPacingOffset, targetPacingOffset, deltaTime * 1.5f);
@@ -148,19 +106,14 @@ public class EnemyStrafeState : EnemyState
     private void ComputeAndSetManualVelocity(float deltaTime)
     {
         float moveSpeed = stateMachine.Stats.moveSpeed * (isInnerRing ? 0.7f : 0.5f);
-
-        // A. V_goal
         Vector3 goalVelocity = ComputeGoalVelocity(moveSpeed);
-
-        // B. V_separation
         Vector3 separationVelocity = stateMachine.ComputeSeparationForce();
-
-        // C. Yielding
         float speedMultiplier = CheckYieldingMultiplier(deltaTime);
+        
+        Vector3 targetVelocity = goalVelocity * speedMultiplier + separationVelocity;
+        targetVelocity = Vector3.ClampMagnitude(targetVelocity, stateMachine.Stats.moveSpeed);
 
-        // D. Tổng hợp
-        Vector3 finalVelocity = goalVelocity * speedMultiplier + separationVelocity;
-        stateMachine.ManualVelocity = Vector3.ClampMagnitude(finalVelocity, stateMachine.Stats.moveSpeed);
+        stateMachine.ManualVelocity = Vector3.Lerp(stateMachine.ManualVelocity, targetVelocity, deltaTime * 8f);
     }
 
     private Vector3 ComputeGoalVelocity(float moveSpeed)
@@ -168,62 +121,59 @@ public class EnemyStrafeState : EnemyState
         Vector3 dirToPlayer = (stateMachine.PlayerTarget.position - stateMachine.transform.position).normalized;
         dirToPlayer.y = 0f;
 
-        // ── CÓ SLOT → đi đến Slot + Pacing offset ──────────────────
+        float currentDist = Vector3.Distance(stateMachine.transform.position, stateMachine.PlayerTarget.position) - stateMachine.Controller.radius;
+
         if (reservedSlot >= 0 && EnemySlotManager.Instance != null)
         {
             Vector3 slotPos = EnemySlotManager.Instance.WorldSlotPosition(reservedSlot);
-
-            // Pacing offset: dịch slot tiến/lùi theo hướng Player↔Slot
             Vector3 slotToPlayer = (stateMachine.PlayerTarget.position - slotPos).normalized;
+            
             slotPos += slotToPlayer * currentPacingOffset;
-
             slotPos.y = stateMachine.transform.position.y;
+            
             Vector3 toSlot   = slotPos - stateMachine.transform.position;
             toSlot.y = 0f;
             float distToSlot = toSlot.magnitude;
 
             if (distToSlot < stateMachine.Stats.slotArrivalTolerance)
             {
-                // Đã đến slot → chỉ strafe nhẹ theo cached direction
-                Vector3 strafeDir = Vector3.Cross(dirToPlayer, Vector3.up) * strafeDirection;
-                return strafeDir * moveSpeed * 0.3f;
+                float slowDownFactor = distToSlot / stateMachine.Stats.slotArrivalTolerance;
+                return toSlot.normalized * (moveSpeed * slowDownFactor);
             }
 
-            float speed = Mathf.Min(moveSpeed, distToSlot * 2f);
-            return toSlot.normalized * speed;
+            return toSlot.normalized * moveSpeed;
         }
 
-        // ── FALLBACK (không có SlotManager) ──────────────────────────
         float baseRadius    = isInnerRing ? stateMachine.Stats.innerRingRadius : stateMachine.Stats.outerRingRadius;
         float dynamicRadius = Mathf.Max(baseRadius + currentPacingOffset, 1.5f);
-        float currentDist   = Vector3.Distance(stateMachine.transform.position,
-                                               stateMachine.PlayerTarget.position)
-                              - stateMachine.Controller.radius;
-
         Vector3 velocity = Vector3.zero;
 
-        if (currentDist < dynamicRadius - 0.1f)
-            velocity += -dirToPlayer * moveSpeed;
-        else if (currentDist > dynamicRadius + 0.1f)
+        if (currentDist < dynamicRadius - 0.5f)
+            velocity += -dirToPlayer * (moveSpeed * 0.5f); 
+        else if (currentDist > dynamicRadius + 0.5f)
         {
             velocity += dirToPlayer * moveSpeed;
             if (currentDist > stateMachine.Stats.outerRingRadius + 4f)
             {
-                stateMachine.SwitchState(new EnemyChaseState(stateMachine));
+                stateMachine.SwitchState(stateMachine.ChaseState);
                 return Vector3.zero;
             }
         }
 
-        // Strafe ngang (cached direction, không random mỗi frame)
         Vector3 strafeDirFb = Vector3.Cross(dirToPlayer, Vector3.up) * strafeDirection;
         Vector3 rayStart    = stateMachine.transform.position + Vector3.up;
-        if (Physics.Raycast(rayStart, strafeDirFb, 1.5f))
+        
+        if (bounceCooldown <= 0f)
         {
-            strafeDirection *= -1;
-            strafeDirFb = -strafeDirFb;
+            if (Physics.Raycast(rayStart, strafeDirFb, 1.5f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            {
+                strafeDirection *= -1;
+                strafeDirFb = -strafeDirFb;
+                bounceCooldown = 0.6f; 
+            }
         }
+        
         velocity += strafeDirFb * moveSpeed;
-
         return velocity;
     }
 
@@ -243,7 +193,7 @@ public class EnemyStrafeState : EnemyState
         {
             if (yieldCheckBuffer[i] == stateMachine.Controller) continue;
             var other = yieldCheckBuffer[i].GetComponent<EnemyStateMachine>();
-            if (other == null || !(other.currentState is EnemyStrafeState)) continue;
+            if (other == null || !(other.currentState == this)) continue;
 
             Vector3 diff = other.transform.position - stateMachine.transform.position;
             diff.y = 0f;
@@ -259,69 +209,129 @@ public class EnemyStrafeState : EnemyState
                 }
             }
         }
-
         return 1f;
     }
 
     private void CheckExitConditions(float deltaTime)
     {
-        float distToPlayer = Vector3.Distance(stateMachine.transform.position,
-                                              stateMachine.PlayerTarget.position)
-                             - stateMachine.Controller.radius;
+        float distToPlayer = Vector3.Distance(stateMachine.transform.position, stateMachine.PlayerTarget.position) - stateMachine.Controller.radius;
+
+        if (stateMachine.Stats.isRangedEnemy && distToPlayer < 4f)
+        {
+            if (stateMachine.DodgeCooldownTimer <= 0f)
+            {
+                stateMachine.DodgeCooldownTimer = 4f; 
+                stateMachine.DodgeState.Setup(stateMachine.PlayerTarget.position);
+                stateMachine.SwitchState(stateMachine.DodgeState);
+                return;
+            }
+            else if (distToPlayer <= 3.5f && stateMachine.MeleeBurstCooldownTimer <= 0f) 
+            {
+                stateMachine.SwitchState(stateMachine.RangeAttackState);
+                return;
+            }
+        }
+
+        // ── MINI-BOSS PHÓNG SÓNG SÉT KHI ĐANG VỜN (STRAFE) ───────
+        // Cập nhật: Dùng rangedProjectilePrefab (vì đã đổi sang gọi sấm sét)
+        if (stateMachine.Stats.isMiniBoss && stateMachine.Stats.rangedProjectilePrefab != null 
+            && stateMachine.SkillCooldownTimer <= 0f && !stateMachine.Stats.isRangedEnemy)
+        {
+            Vector3 dirToTarget = (stateMachine.PlayerTarget.position - stateMachine.transform.position).normalized;
+            dirToTarget.y = 0f;
+            float angleToTarget = Vector3.Angle(stateMachine.transform.forward, dirToTarget);
+
+            float minRangedDist = stateMachine.Stats.attackRange + 2f;
+            // Cho phép bắn xa tới 20m
+            if (distToPlayer > minRangedDist && distToPlayer <= 20f && angleToTarget <= 45f)
+            {
+                stateMachine.SkillCooldownTimer = 6f;
+                stateMachine.SwitchState(stateMachine.RangeAttackState);
+                return;
+            }
+        }
 
         if (distToPlayer > stateMachine.Stats.outerRingRadius + 4f)
         {
-            stateMachine.SwitchState(new EnemyChaseState(stateMachine));
+            stateMachine.SwitchState(stateMachine.ChaseState);
             return;
         }
 
         maneuverTimer -= deltaTime;
         if (maneuverTimer > 0f) return;
 
-        bool isInInner = EnemySlotManager.Instance != null && reservedSlot >= 0
-            ? EnemySlotManager.Instance.IsInnerSlot(reservedSlot)
-            : isInnerRing;
+        bool isInInner = EnemySlotManager.Instance != null && reservedSlot >= 0 ? EnemySlotManager.Instance.IsInnerSlot(reservedSlot) : isInnerRing;
 
-        // Chỉ xin Token khi quái đang ở vòng trong (tránh giam Token vĩnh viễn)
         if (isInInner)
         {
-            bool hasToken = AIDirector.Instance != null &&
-                            AIDirector.Instance.RequestAttackToken(stateMachine);
+            Vector3 dirToPlayer = (stateMachine.PlayerTarget.position - stateMachine.transform.position).normalized;
+            dirToPlayer.y = 0f;
+            float angleToPlayer = Vector3.Angle(stateMachine.transform.forward, dirToPlayer);
+
+            bool hasToken = stateMachine.Stats.isMiniBoss || 
+                           (AIDirector.Instance != null && AIDirector.Instance.RequestAttackToken(stateMachine));
+
+            // 🟢 MINI-BOSS: Dù bỏ qua Token, vẫn phải chờ Cooldown giữa các combo
+            // Tạo nhịp chiến đấu God of War: Chém -> Vờn -> Chém, không phải máy bay trực thăng
+            if (stateMachine.Stats.isMiniBoss && stateMachine.SkillCooldownTimer > 0f)
+            {
+                hasToken = false;
+            }
 
             if (hasToken)
             {
-                // Đã có Token: nếu đứng gần thì chém, nếu đứng xa thì rượt lại gần rồi mới chém
                 if (distToPlayer <= stateMachine.Stats.attackRange + 0.2f)
                 {
-                    stateMachine.SwitchState(new EnemyAttackState(stateMachine));
+                    if (angleToPlayer > 60f)
+                    {
+                        if (AIDirector.Instance != null) AIDirector.Instance.ReleaseToken(stateMachine);
+                        return; 
+                    }
+
+                    if (stateMachine.Stats.isRangedEnemy) 
+                    {
+                        // 🟢 FIX CHÍNH: Nếu có Token nhưng chiêu nổ đang hồi và Kratos ở quá sát -> Trả Token lại, đứng im!
+                        if (distToPlayer <= 3.5f && stateMachine.MeleeBurstCooldownTimer > 0f)
+                        {
+                            if (AIDirector.Instance != null) AIDirector.Instance.ReleaseToken(stateMachine);
+                            return; 
+                        }
+                        
+                        stateMachine.SwitchState(stateMachine.RangeAttackState);
+                    }
+                    else 
+                    {
+                        // 🟢 Boss cận chiến: Set cooldown sau khi chém để tạo nhịp chiến đấu
+                        if (stateMachine.Stats.isMiniBoss)
+                        {
+                            // Phase 2: Nhịp tấn công dồn dập hơn (chỉ nghỉ 1-1.5s thay vì 1.5-3s)
+                            if (stateMachine.IsPhase2) stateMachine.SkillCooldownTimer = Random.Range(1.0f, 1.5f);
+                            else stateMachine.SkillCooldownTimer = Random.Range(1.5f, 3f);
+                        }
+                        stateMachine.AttackState.Setup(-1);
+                        stateMachine.SwitchState(stateMachine.AttackState);
+                    }
                 }
                 else
                 {
-                    stateMachine.SwitchState(new EnemyChaseState(stateMachine));
+                    stateMachine.SwitchState(stateMachine.ChaseState);
                 }
                 return;
             }
         }
 
-        // Off-screen push: đẩy quái vào trước Camera thay vì chỉ log
-        if (AIDirector.Instance != null &&
-            !AIDirector.Instance.IsEnemyOnScreen(stateMachine.transform.position))
+        if (AIDirector.Instance != null && !AIDirector.Instance.IsEnemyOnScreen(stateMachine.transform.position))
         {
             Vector3 pushDir = AIDirector.Instance.GetOnScreenDirection(stateMachine.transform.position);
             if (pushDir.sqrMagnitude > 0.01f)
             {
-                // Đổi strafeDirection sao cho quái sẽ strafe về phía Camera
-                float dot = Vector3.Dot(Vector3.Cross(
-                    (stateMachine.PlayerTarget.position - stateMachine.transform.position).normalized,
-                    Vector3.up), pushDir);
+                float dot = Vector3.Dot(Vector3.Cross((stateMachine.PlayerTarget.position - stateMachine.transform.position).normalized, Vector3.up), pushDir);
                 strafeDirection = dot > 0 ? 1 : -1;
             }
-
-            // Cho thêm thời gian vờn để strafe vào màn hình
             maneuverTimer = Random.Range(1.5f, 3f);
             return;
         }
 
-        stateMachine.SwitchState(new EnemyIdleState(stateMachine));
+        stateMachine.SwitchState(stateMachine.IdleState);
     }
 }

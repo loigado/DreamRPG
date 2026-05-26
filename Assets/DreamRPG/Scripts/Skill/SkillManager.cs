@@ -29,4 +29,13 @@ public class SkillManager : MonoBehaviour
         if (skill == null) return;
         cooldownTimers[skill] = skill.cooldownTime;
     }
+
+    // ========================================================
+    // 🟢 THÊM HÀM NÀY ĐỂ TRÍCH XUẤT THỜI GIAN GỬI LÊN UI
+    // ========================================================
+    public float GetRemainingCooldown(SkillData skill)
+    {
+        if (skill == null || !cooldownTimers.ContainsKey(skill)) return 0f;
+        return Mathf.Max(0f, cooldownTimers[skill]);
+    }
 }

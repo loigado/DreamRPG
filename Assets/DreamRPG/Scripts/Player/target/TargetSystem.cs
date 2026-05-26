@@ -2,25 +2,18 @@ using UnityEngine;
 using Unity.Cinemachine;
 
 /// <summary>
-/// TargetSystem — Hệ thống Lock-On chuẩn AAA (God of War / FF7R).
+/// TargetSystem — Hệ thống Lock-On chuẩn AAA (Ghost of Tsushima style).
 ///
-/// Features:
-///   • Hard Lock (Tab) — khóa cứng 1 mục tiêu, camera xoay theo
-///   • Soft Lock (tự động) — attack/skill tự bám quái gần nhất trong tầm nhìn
-///   • Switch Target — nhấn Tab khi đang lock → chuyển sang quái kế tiếp
-///   • Line of Sight check — không lock qua tường
-///   • Distance break — mất lock khi quá xa
-///   • Dead target auto-release — quái chết → tự hủy lock
-///   • Lock icon theo sát target (World-to-Screen)
-///   • GOW-style Pivot rotation cho camera
+/// 🟢 ĐÃ FIX LỖI: Nhấn Tab 1 lần để Lock, nhấn lần 2 để Tắt (Không tự động cycle mục tiêu).
+/// 🟢 GHOST OF TSUSHIMA MECHANIC: Soft Lock giờ đây ưu tiên Hướng di chuyển (WASD) thay vì Hướng Camera.
 /// </summary>
 public class TargetSystem : MonoBehaviour
 {
     [Header("Scanning")]
     [Tooltip("Bán kính quét tìm quái")]
     public float scanRadius = 15f;
-    [Tooltip("Góc tối đa từ tâm Camera để chấp nhận target")]
-    public float maxViewAngle = 70f;
+    [Tooltip("Góc tối đa để chấp nhận target")]
+    public float maxViewAngle = 90f; 
     [Tooltip("Khoảng cách tối đa duy trì lock (xa hơn → tự hủy)")]
     public float maxLockDistance = 20f;
     public LayerMask enemyLayer;
@@ -47,11 +40,7 @@ public class TargetSystem : MonoBehaviour
     private PlayerStateMachine stateMachine;
 
     // === CACHE ===
-    private readonly Collider[] scanBuffer = new Collider[30]; // NonAlloc
-
-    // =========================================================
-    // LIFECYCLE
-    // =========================================================
+    private readonly Collider[] scanBuffer = new Collider[30]; 
 
     private void Awake()
     {
@@ -61,16 +50,15 @@ public class TargetSystem : MonoBehaviour
 
     private void Update()
     {
-        // Lock/Unlock input qua InputReader (nếu có) hoặc fallback Tab
+        // 🟢 FIX BUG: Nút Tab giờ đây hoạt động như một công tắc (Toggle) thuần túy
         if (Input.GetKeyDown(KeyCode.Tab))
         {
             if (IsHardLocking)
-                SwitchOrUnlock(); // Đang lock → chuyển/hủy
+                CancelLock(); // Đang lock thì HỦY
             else
-                TryLock();         // Chưa lock → tìm & lock
+                TryLock();    // Chưa lock thì TÌM VÀ LOCK
         }
 
-        // Đang Lock → validate mỗi frame
         if (IsHardLocking)
         {
             ValidateLock();
@@ -87,7 +75,6 @@ public class TargetSystem : MonoBehaviour
 
     private void LateUpdate()
     {
-        // GOW Pivot: Xoay pivot hướng về target (camera sẽ follow pivot)
         if (IsHardLocking && currentTarget != null && gowPivot != null)
         {
             Vector3 dir = (currentTarget.position - transform.position);
@@ -96,39 +83,132 @@ public class TargetSystem : MonoBehaviour
                 gowPivot.rotation = Quaternion.LookRotation(dir.normalized);
         }
 
-        // Update icon position (World → Screen → World above target)
         UpdateLockIcon();
     }
 
     // =========================================================
-    // PUBLIC API
+    // 🟢 HỆ THỐNG GHOST OF TSUSHIMA (INTENT-BASED TARGETING)
     // =========================================================
 
-    /// <summary>Trả về target hiện tại (hard lock ưu tiên > soft lock).</summary>
     public Transform GetCurrentTarget() => IsHardLocking ? currentTarget : softTarget;
 
-    /// <summary>Tìm soft target cho attack/skill (không lock camera).</summary>
+    /// <summary>
+    /// Tìm mục tiêu dựa trên ý định di chuyển của người chơi (Ghost of Tsushima).
+    /// </summary>
     public void FindSoftTarget()
     {
         if (IsHardLocking) return;
-        softTarget = FindBestTarget(scanRadius, maxViewAngle, true);
+
+        // Ưu tiên hướng mà người chơi đang bấm (WASD/Analog Stick)
+        Vector3 playerIntentDir = GetPlayerIntentDirection();
+        
+        // Truyền hướng đó vào hàm tìm kiếm
+        softTarget = FindBestTargetByDirection(playerIntentDir, scanRadius, maxViewAngle, true);
     }
 
-    /// <summary>Xoay Player mặt về phía target.</summary>
+    /// <summary>
+    /// Tính toán hướng người chơi thực sự muốn đánh tới.
+    /// </summary>
+    private Vector3 GetPlayerIntentDirection()
+    {
+        if (stateMachine == null || stateMachine.InputReader == null || mainCam == null) 
+            return transform.forward;
+
+        Vector2 input = stateMachine.InputReader.MovementValue;
+
+        // Nếu người chơi ĐANG BẤM PHÍM DI CHUYỂN
+        if (input.sqrMagnitude > 0.01f)
+        {
+            Vector3 camForward = mainCam.transform.forward;
+            camForward.y = 0;
+            camForward.Normalize();
+
+            Vector3 camRight = mainCam.transform.right;
+            camRight.y = 0;
+            camRight.Normalize();
+
+            // Trả về hướng di chuyển tương đối so với Camera
+            return (camForward * input.y + camRight * input.x).normalized;
+        }
+
+        // Nếu người chơi ĐỨNG YÊN, lấy hướng nhân vật đang nhìn
+        Vector3 fallbackDir = transform.forward;
+        fallbackDir.y = 0;
+        return fallbackDir.normalized;
+    }
+
+    /// <summary>
+    /// Core logic: Chấm điểm mục tiêu ưu tiên HƯỚNG CHỈ ĐỊNH thay vì chỉ dùng Camera.
+    /// </summary>
+    private Transform FindBestTargetByDirection(Vector3 referenceDir, float radius, float maxAngle, bool requireLOS)
+    {
+        int count = Physics.OverlapSphereNonAlloc(transform.position, radius, scanBuffer, enemyLayer);
+        
+        Transform best = null;
+        float bestScore = Mathf.Infinity;
+
+        for (int i = 0; i < count; i++)
+        {
+            Transform candidate = scanBuffer[i].transform;
+
+            var hp = candidate.GetComponentInParent<EnemyHealth>();
+            // 🟢 ĐÃ FIX LỖI: Bắt buộc phải có EnemyHealth (để không trúng cỏ cây hoặc trúng Player)
+            // Đồng thời bỏ qua chính bản thân Player
+            if (hp == null || hp.IsDead || candidate.root == transform.root) continue;
+
+            Vector3 dirToTarget = candidate.position - transform.position;
+            float dist = dirToTarget.magnitude;
+            dirToTarget.y = 0;
+            dirToTarget.Normalize();
+
+            // Kiểm tra góc lệch so với HƯỚNG Ý ĐỊNH
+            float angle = Vector3.Angle(referenceDir, dirToTarget);
+            if (angle > maxAngle) continue;
+
+            if (requireLOS)
+            {
+                Vector3 origin = transform.position + Vector3.up;
+                Vector3 targetPoint = candidate.position + Vector3.up;
+                if (Physics.Linecast(origin, targetPoint, obstructionLayer))
+                    continue;
+            }
+
+            // 🟢 GoT Scoring: Đặt trọng số Góc quay lên cực cao (85%) so với Khoảng cách (15%)
+            // Nghĩa là: Con quái dù ở xa nhưng nằm đúng hướng phím bấm sẽ bị chém trúng, 
+            // thay vì chém nhầm con quái ở gần nhưng nằm chệch hướng!
+            float angleScore = angle / maxAngle;       
+            float distScore = dist / radius;             
+            float totalScore = angleScore * 0.85f + distScore * 0.15f;
+
+            if (totalScore < bestScore)
+            {
+                bestScore = totalScore;
+                best = candidate;
+            }
+        }
+
+        return best;
+    }
+
+    // =========================================================
+    // PUBLIC API & UTILS
+    // =========================================================
+
     public void FaceTarget(Vector3 targetPos, float deltaTime, bool instant = false)
     {
-        Vector3 dir = (targetPos - transform.position);
-        dir.y = 0f;
-        if (dir.sqrMagnitude < 0.01f) return;
+        Vector3 dirToTarget = (targetPos - transform.position);
+        dirToTarget.y = 0;
 
-        Quaternion targetRot = Quaternion.LookRotation(dir.normalized);
-        if (instant)
+        if (dirToTarget.sqrMagnitude < 0.36f) return; 
+
+        Quaternion targetRot = Quaternion.LookRotation(dirToTarget.normalized);
+        
+        if (instant) 
             transform.rotation = targetRot;
-        else
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, deltaTime * 20f);
+        else 
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, deltaTime * 15f);
     }
 
-    /// <summary>Đồng bộ góc camera khi chuyển giữa FreeLook ↔ LockOn.</summary>
     public void SyncCamera(CinemachineCamera targetCam)
     {
         if (targetCam == null || mainCam == null) return;
@@ -143,7 +223,6 @@ public class TargetSystem : MonoBehaviour
         }
     }
 
-    /// <summary>Hủy lock cứng + sync camera + cleanup icon.</summary>
     public void CancelLock()
     {
         if (!IsHardLocking) return;
@@ -151,26 +230,21 @@ public class TargetSystem : MonoBehaviour
         ReleaseLock();
     }
 
-    /// <summary>Hủy lock im lặng (không sync camera — dùng khi chuyển weapon).</summary>
     public void ClearTargetSilently()
     {
         if (!IsHardLocking) return;
         ReleaseLock();
     }
 
-    /// <summary>
-    /// Tìm target cho Skill (có LOS check + tầm xa hơn).
-    /// Ưu tiên: Hard Lock > Soft scan.
-    /// </summary>
     public Transform FindSkillTarget(float maxDistance = 20f, float maxAngle = 45f)
     {
         if (IsHardLocking && currentTarget != null)
         {
-            // Verify target còn sống + trong tầm
             if (IsTargetValid(currentTarget, maxDistance))
                 return currentTarget;
         }
-        return FindBestTarget(maxDistance, maxAngle, true);
+        Vector3 intentDir = GetPlayerIntentDirection();
+        return FindBestTargetByDirection(intentDir, maxDistance, maxAngle, true);
     }
 
     private bool IsTargetValid(Transform target, float maxDistance)
@@ -186,59 +260,40 @@ public class TargetSystem : MonoBehaviour
     }
 
     // =========================================================
-    // LOCK LOGIC
+    // HARD LOCK LOGIC
     // =========================================================
 
-    /// <summary>Thử lock target mới.</summary>
     private void TryLock()
     {
-        // Cấm lock khi cầm cung
         if (stateMachine != null && stateMachine.CurrentWeapon != null 
             && stateMachine.CurrentWeapon.Type == WeaponType.Ranged)
             return;
 
-        Transform target = FindBestTarget(scanRadius, maxViewAngle, true);
+        // Hard lock thì dựa vào hướng Camera để thân thiện với game thủ PC
+        Vector3 camDir = mainCam.transform.forward;
+        camDir.y = 0;
+        
+        Transform target = FindBestTargetByDirection(camDir.normalized, scanRadius, maxViewAngle, true);
         if (target == null) return;
 
-        // Lock thành công
         currentTarget = target;
         IsHardLocking = true;
 
-        // Sync pivot trước khi camera chuyển
         if (gowPivot != null)
             gowPivot.rotation = Quaternion.LookRotation(mainCam.transform.forward);
 
-        // Camera priority
-        if (lockOnCamera != null) lockOnCamera.Priority = 20;
+        if (lockOnCamera != null) 
+        {
+            // 🟢 ÉP CAMERA PHẢI NHÌN VÀO QUÁI (Chống trôi / quay mòng mòng nếu bạn lỡ set LookAt vào Player)
+            lockOnCamera.LookAt = currentTarget;
+            lockOnCamera.Priority = 20;
+        }
+        
         if (freeLookCamera != null) freeLookCamera.Priority = 10;
 
-        // Spawn icon
         SpawnLockIcon();
     }
 
-    /// <summary>Đang lock → nhấn Tab lần nữa → chuyển target hoặc hủy lock.</summary>
-    private void SwitchOrUnlock()
-    {
-        Transform nextTarget = FindNextTarget();
-        
-        if (nextTarget != null && nextTarget != currentTarget)
-        {
-            // Chuyển sang target mới
-            currentTarget = nextTarget;
-            
-            // Di chuyển icon sang target mới
-            DespawnLockIcon();
-            SpawnLockIcon();
-        }
-        else
-        {
-            // Không có target khác → hủy lock
-            SyncCamera(freeLookCamera);
-            ReleaseLock();
-        }
-    }
-
-    /// <summary>Validate lock mỗi frame — tự hủy nếu target không hợp lệ.</summary>
     private void ValidateLock()
     {
         if (currentTarget == null)
@@ -247,12 +302,14 @@ public class TargetSystem : MonoBehaviour
             return;
         }
 
-        // Check 1: Target đã chết?
         var health = currentTarget.GetComponent<EnemyHealth>();
         if (health != null && health.IsDead)
         {
-            // Target chết → tìm target kế tiếp hoặc hủy
-            Transform next = FindBestTarget(scanRadius, maxViewAngle, true);
+            // Tự động tìm con khác sát với góc nhìn camera nếu con cũ chết
+            Vector3 camDir = mainCam.transform.forward;
+            camDir.y = 0;
+            Transform next = FindBestTargetByDirection(camDir.normalized, scanRadius, maxViewAngle, true);
+            
             if (next != null && next != currentTarget)
             {
                 currentTarget = next;
@@ -266,120 +323,16 @@ public class TargetSystem : MonoBehaviour
             return;
         }
 
-        // Check 2: Quá xa?
         float dist = Vector3.Distance(transform.position, currentTarget.position);
         if (dist > maxLockDistance)
         {
             CancelLock();
             return;
         }
-
-        // Check 3: Bị che khuất quá lâu? (Optional — GoW vẫn giữ lock qua tường ngắn)
-        // Có thể thêm timer nếu muốn: nếu LOS bị chặn > 2s → hủy lock
     }
 
     // =========================================================
-    // TARGET FINDING
-    // =========================================================
-
-    /// <summary>
-    /// Tìm target tốt nhất — NonAlloc, LOS check, dead check.
-    /// Scoring: góc nhỏ + khoảng cách gần = điểm cao.
-    /// </summary>
-    private Transform FindBestTarget(float radius, float maxAngle, bool requireLOS)
-    {
-        int count = Physics.OverlapSphereNonAlloc(transform.position, radius, scanBuffer, enemyLayer);
-        
-        Transform best = null;
-        float bestScore = Mathf.Infinity;
-
-        for (int i = 0; i < count; i++)
-        {
-            Transform candidate = scanBuffer[i].transform;
-
-            // Skip dead
-            var hp = candidate.GetComponent<EnemyHealth>();
-            if (hp != null && hp.IsDead) continue;
-
-            Vector3 dirToTarget = candidate.position - mainCam.transform.position;
-            float dist = dirToTarget.magnitude;
-
-            // Angle check
-            float angle = Vector3.Angle(mainCam.transform.forward, dirToTarget.normalized);
-            if (angle > maxAngle) continue;
-
-            // LOS check (raycast từ Player → target, không phải camera → target)
-            if (requireLOS)
-            {
-                Vector3 origin = transform.position + Vector3.up;
-                Vector3 targetPoint = candidate.position + Vector3.up;
-                if (Physics.Linecast(origin, targetPoint, obstructionLayer))
-                    continue;
-            }
-
-            // Scoring: 70% góc + 30% khoảng cách (normalize cả hai)
-            float angleScore = angle / maxAngle;        // [0, 1]
-            float distScore = dist / radius;             // [0, 1]
-            float totalScore = angleScore * 0.7f + distScore * 0.3f;
-
-            if (totalScore < bestScore)
-            {
-                bestScore = totalScore;
-                best = candidate;
-            }
-        }
-
-        return best;
-    }
-
-    /// <summary>
-    /// Tìm target KẾ TIẾP (dùng khi Switch Target).
-    /// Logic: tìm quái gần tâm camera nhất MÀ KHÔNG PHẢI quái đang lock.
-    /// </summary>
-    private Transform FindNextTarget()
-    {
-        int count = Physics.OverlapSphereNonAlloc(transform.position, scanRadius, scanBuffer, enemyLayer);
-        
-        Transform best = null;
-        float bestScore = Mathf.Infinity;
-
-        for (int i = 0; i < count; i++)
-        {
-            Transform candidate = scanBuffer[i].transform;
-
-            // Skip current target
-            if (candidate == currentTarget) continue;
-
-            // Skip dead
-            var hp = candidate.GetComponent<EnemyHealth>();
-            if (hp != null && hp.IsDead) continue;
-
-            float dist = Vector3.Distance(transform.position, candidate.position);
-            if (dist > maxLockDistance) continue;
-
-            // LOS check
-            Vector3 origin = transform.position + Vector3.up;
-            Vector3 targetPoint = candidate.position + Vector3.up;
-            if (Physics.Linecast(origin, targetPoint, obstructionLayer))
-                continue;
-
-            // Scoring: ưu tiên gần Player nhất
-            float angle = Vector3.Angle(mainCam.transform.forward, 
-                (candidate.position - mainCam.transform.position).normalized);
-            float score = angle * 0.5f + dist * 0.5f;
-
-            if (score < bestScore)
-            {
-                bestScore = score;
-                best = candidate;
-            }
-        }
-
-        return best;
-    }
-
-    // =========================================================
-    // LOCK ICON
+    // LOCK ICON & CLEANUP
     // =========================================================
 
     private void SpawnLockIcon()
@@ -408,11 +361,8 @@ public class TargetSystem : MonoBehaviour
     {
         if (currentIcon == null || currentTarget == null) return;
 
-        // Icon theo sát target (đã SetParent nên tự di chuyển)
-        // Nhưng nếu muốn icon luôn facing camera:
         currentIcon.transform.position = currentTarget.position + Vector3.up * iconHeightOffset;
         
-        // Billboard: icon luôn quay mặt về camera
         if (mainCam != null)
         {
             currentIcon.transform.rotation = Quaternion.LookRotation(
@@ -420,11 +370,6 @@ public class TargetSystem : MonoBehaviour
         }
     }
 
-    // =========================================================
-    // CLEANUP
-    // =========================================================
-
-    /// <summary>Cleanup chung khi hủy lock.</summary>
     private void ReleaseLock()
     {
         IsHardLocking = false;
@@ -432,7 +377,11 @@ public class TargetSystem : MonoBehaviour
 
         DespawnLockIcon();
 
-        if (lockOnCamera != null) lockOnCamera.Priority = 0;
+        if (lockOnCamera != null) 
+        {
+            lockOnCamera.Priority = 0;
+            lockOnCamera.LookAt = null; // 🟢 Trả lại trạng thái tự do
+        }
         if (freeLookCamera != null) freeLookCamera.Priority = 10;
     }
 }

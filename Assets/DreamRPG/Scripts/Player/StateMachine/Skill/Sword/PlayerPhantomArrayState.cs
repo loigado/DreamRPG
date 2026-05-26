@@ -93,7 +93,7 @@ public class PlayerPhantomArrayState : PlayerBaseState
             timer += deltaTime;
             if (timer >= 0.8f) 
             {
-                stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+                stateMachine.SwitchState(new PlayerMovementState(stateMachine));
             }
         }
     }

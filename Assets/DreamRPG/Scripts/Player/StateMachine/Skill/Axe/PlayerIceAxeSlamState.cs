@@ -59,7 +59,7 @@ public class PlayerIceAxeSlamState : PlayerBaseState
         AnimatorStateInfo stateInfo = stateMachine.Animator.GetCurrentAnimatorStateInfo(0);
         if (stateInfo.IsName(skill.animationName) && stateInfo.normalizedTime >= 0.75f)
         {
-            stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+            stateMachine.SwitchState(new PlayerMovementState(stateMachine));
         }
     }
 
@@ -94,7 +94,7 @@ public class PlayerIceAxeSlamState : PlayerBaseState
                     if (hit.TryGetComponent<EnemyHealth>(out EnemyHealth health))
                     {
                         float damage = (stateMachine.CurrentWeapon != null ? stateMachine.CurrentWeapon.Damage : 30f) * skill.damageMultiplier;
-                        health.TakeDamage(damage, stateMachine.transform.position, 13f);
+                        health.TakeDamage(damage, stateMachine.transform.position, true);
                         
                         // 🧊 ĐÓNG BĂNG: Quái dính chiêu sẽ bị đóng băng
                         // Nếu bị đánh tiếp khi đang đóng băng → VỠ BĂNG (Shatter) x2 sát thương!

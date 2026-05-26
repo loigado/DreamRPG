@@ -44,8 +44,9 @@ public class PlayerShootState : PlayerBaseState
                 stateMachine.isReloading = false;
                 if (stateMachine.AimCamera != null) stateMachine.AimCamera.SetActive(false);
                 
+                stateMachine.Animator.SetLayerWeight(1, 0f); // 🟢 FIX BUG: Trả lại trạng thái tay không
                 stateMachine.Animator.Play(EmptyHash, 1, 0f);
-                stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+                stateMachine.SwitchState(new PlayerMovementState(stateMachine));
             }
         }
     }
@@ -53,5 +54,6 @@ public class PlayerShootState : PlayerBaseState
     public override void Exit()
     {
         if (stateMachine.bowStringScript != null) stateMachine.bowStringScript.isDrawing = false;
+        stateMachine.Animator.SetLayerWeight(1, 0f); // 🟢 FIX BUG: Failsafe reset layer tay
     }
 }

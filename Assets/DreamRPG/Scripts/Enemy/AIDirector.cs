@@ -22,9 +22,9 @@ public class AIDirector : MonoBehaviour
 
     [Header("Wave Pacing")]
     [Tooltip("Sau bao nhiêu lượt tấn công thì ép toàn bộ quái nghỉ 1 nhịp")]
-    public int attacksPerWave = 4;
+    public int attacksPerWave = 3;
     [Tooltip("Thời gian nghỉ giữa các sóng (giây)")]
-    public float waveBreathingTime = 2f;
+    public float waveBreathingTime = 3f;
     private int attacksSinceLastBreak = 0;
     private float breathingTimer = 0f;
     private bool isBreathing = false;
@@ -93,6 +93,11 @@ public class AIDirector : MonoBehaviour
     // TOKEN SYSTEM
     // =========================================================
 
+    [Header("Global Attack Rhythm")]
+    [Tooltip("Thời gian chờ tối thiểu giữa các đòn đánh của bầy quái (ngăn chặn đánh hội đồng cùng 1 lúc)")]
+    public float globalAttackCooldown = 1.5f;
+    private float lastGlobalAttackTime = 0f;
+
     /// <summary>
     /// Xin quyền tấn công. Trả về true nếu được phép.
     /// </summary>
@@ -107,8 +112,10 @@ public class AIDirector : MonoBehaviour
         // 2. Juggle Guard
         if (isPlayerJuggling) return false;
 
-        // 3. Hết Token
-        if (currentActiveTokens >= maxConcurrentAttacks) return false;
+        // 3. Hết Token (Tính theo Trọng số / Weight)
+        int weight = (enemy.Stats != null) ? enemy.Stats.tokenWeight : 1;
+        // Nếu không có ai đang đánh, ưu tiên cho Boss xài chiêu luôn (dù weight > max)
+        if (currentActiveTokens + weight > maxConcurrentAttacks) return false;
 
         // 4. Off-screen
         if (!IsEnemyOnScreen(enemy.transform.position)) return false;
@@ -120,12 +127,17 @@ public class AIDirector : MonoBehaviour
             if (Time.time - lastTime < cooldown) return false;
         }
 
+        // 5.5 🟢 GLOBAL ATTACK COOLDOWN (Chống hội đồng)
+        // Nếu mới có quái đánh xong hoặc vừa xin token, bắt buộc chờ 1.5s
+        if (Time.time - lastGlobalAttackTime < globalAttackCooldown) return false;
+
         // 6. Priority — nếu có quái ưu tiên cao hơn đang chờ
         if (IsHigherPriorityEnemyWaiting(enemy)) return false;
 
         // Cấp Token
-        currentActiveTokens++;
+        currentActiveTokens += weight;
         lastAttackTimes[enemy] = Time.time;
+        lastGlobalAttackTime = Time.time; // 🟢 Update Global Time
         enemy.IsHoldingAttackToken = true;
         return true;
     }
@@ -133,11 +145,17 @@ public class AIDirector : MonoBehaviour
     /// <summary>Trả Token khi đánh xong hoặc bị gián đoạn. Chỉ release nếu thật sự đang giữ.</summary>
     public void ReleaseToken(EnemyStateMachine enemy)
     {
-        if (enemy != null && !enemy.IsHoldingAttackToken) return; // Không giữ token → bỏ qua
+        if (enemy == null) return;
+        if (!enemy.IsHoldingAttackToken) return; // Không giữ token → bỏ qua
 
-        if (enemy != null) enemy.IsHoldingAttackToken = false;
+        enemy.IsHoldingAttackToken = false;
 
-        currentActiveTokens = Mathf.Max(0, currentActiveTokens - 1);
+        int weight = (enemy.Stats != null) ? enemy.Stats.tokenWeight : 1;
+        currentActiveTokens = Mathf.Max(0, currentActiveTokens - weight);
+
+        // 🟢 Reset Global Time khi một con quái nhả Token (đánh xong), 
+        // để con quái tiếp theo phải chờ thêm ít nhất 1 khoảng Cooldown mới được lao vào.
+        lastGlobalAttackTime = Time.time;
 
         // Wave tracking
         attacksSinceLastBreak++;
@@ -145,6 +163,7 @@ public class AIDirector : MonoBehaviour
         {
             isBreathing = true;
             breathingTimer = waveBreathingTime;
+            Debug.Log($"<color=cyan>🌊 WAVE BREATHING: Bầy quái nghỉ {waveBreathingTime}s. TỚI LƯỢT PLAYER XẢ COMBO!</color>");
         }
     }
 

@@ -1,68 +1,75 @@
 using UnityEngine;
 
-/// <summary>
-/// EnemyHitReactionState — Quái bị choáng khi ăn đòn (GoW essential).
-///
-/// Logic:
-///   • Light hit → choáng ngắn (0.4s), hơi dật lùi
-///   • Heavy hit → choáng dài (1.0s), dật lùi mạnh
-///   • Sau khi hết choáng → về StrafeState (đã biết Player ở đâu)
-///   • Nếu chết trong lúc choáng → EnemyHealth.OnDeath sẽ tự chuyển sang DeathState
-/// </summary>
 public class EnemyHitReactionState : EnemyState
 {
     private Vector3 attackerPos;
-    private bool    isHeavy;
-    private float   staggerTimer;
+    private bool isHeavy;
+    private float staggerTimer;
     private Vector3 knockbackVelocity;
 
-    public EnemyHitReactionState(EnemyStateMachine stateMachine, Vector3 attackerPos, bool isHeavy)
-        : base(stateMachine)
+    public EnemyHitReactionState(EnemyStateMachine stateMachine) : base(stateMachine) { }
+
+    public void Setup(Vector3 attackerPos, bool isHeavy)
     {
         this.attackerPos = attackerPos;
-        this.isHeavy     = isHeavy;
+        this.isHeavy = isHeavy;
     }
 
     public override void Enter()
     {
-        // Dừng mọi di chuyển
+        var afterimage = stateMachine.GetComponent<AfterimageController>();
+        if (afterimage != null) afterimage.StopTrail();
+        stateMachine.Anim.speed = 1f;
+        stateMachine.Anim.updateMode = AnimatorUpdateMode.Normal;
         stateMachine.ManualVelocity = Vector3.zero;
+
+        // GIỮ NGUYÊN NavMeshAgent, chỉ bắt nó dừng lại. Tắt đi sẽ gây lỗi văng lên trời!
         if (stateMachine.Agent.isActiveAndEnabled && stateMachine.Agent.isOnNavMesh)
+        {
+            stateMachine.Agent.ResetPath();
             stateMachine.Agent.isStopped = true;
+        }
 
-        // Tính thời gian choáng
-        staggerTimer = isHeavy
-            ? stateMachine.Stats.heavyStaggerDuration
-            : stateMachine.Stats.lightStaggerDuration;
-
-        // Tính knockback: lùi ra xa attacker
+        staggerTimer = isHeavy ? stateMachine.Stats.heavyStaggerDuration : stateMachine.Stats.lightStaggerDuration;
+        
+        // 🟢 GIẢM MẠNH LỰC ĐẨY LÙI: Tránh trượt dốc bay lên trời
+        float knockStrength = isHeavy ? 1.5f : 0.5f; 
         Vector3 knockDir = (stateMachine.transform.position - attackerPos).normalized;
-        knockDir.y = 0f;
-        float knockStrength = isHeavy ? 4f : 1.5f;
+        knockDir.y = 0;
         knockbackVelocity = knockDir * knockStrength;
 
-        // Trigger animation
-        stateMachine.Anim.SetTrigger(isHeavy ? "HeavyHit" : "LightHit");
+        stateMachine.Anim.ResetTrigger(EnemyConstants.HashAttack);
+        stateMachine.Anim.SetTrigger(isHeavy ? EnemyConstants.HashHeavyHit : EnemyConstants.HashLightHit);
+
+        // 🟢 Vượt rào Slow-motion của Kratos
+        if (Time.timeScale < 1f)
+        {
+            stateMachine.Anim.Update(0.1f);
+        }
     }
 
     public override void Tick(float deltaTime)
     {
         staggerTimer -= deltaTime;
-
-        // Knockback giảm dần (damping)
         knockbackVelocity = Vector3.Lerp(knockbackVelocity, Vector3.zero, deltaTime * 5f);
         stateMachine.ManualVelocity = knockbackVelocity;
 
-        // Hết choáng → về StrafeState (vẫn nhớ Player)
         if (staggerTimer <= 0f)
         {
             stateMachine.HasAggro = true;
-            stateMachine.SwitchState(new EnemyStrafeState(stateMachine));
+            stateMachine.SkillCooldownTimer = Random.Range(1.5f, 2.5f); 
+            stateMachine.SwitchState(stateMachine.StrafeState);
         }
     }
 
     public override void Exit()
     {
         stateMachine.ManualVelocity = Vector3.zero;
+        
+        // Chỉ việc cho phép Agent tiếp tục di chuyển, KHÔNG DỊCH CHUYỂN
+        if (stateMachine.Agent != null && stateMachine.Agent.isActiveAndEnabled && stateMachine.Agent.isOnNavMesh)
+        {
+            stateMachine.Agent.isStopped = false;
+        }
     }
 }

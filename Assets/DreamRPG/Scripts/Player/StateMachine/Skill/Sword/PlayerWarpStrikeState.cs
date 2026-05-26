@@ -16,7 +16,7 @@ public class PlayerWarpStrikeState : PlayerBaseState
     private GameObject flyingSwordObj;
     private float originalFOV;
 
-    private bool didHitEnemy = false;
+    private GameObject struckEnemy = null;
     private bool isWarping = false;
     private Vector3 warpStartPos;
     private Vector3 warpTargetPos;
@@ -37,7 +37,7 @@ public class PlayerWarpStrikeState : PlayerBaseState
         hasTeleported = false;
         hasLaunched = false;
         isWarping = false;
-        didHitEnemy = false; 
+        struckEnemy = null; 
         isFinishing = false; 
         finishTimer = 0f;
 
@@ -111,7 +111,9 @@ public class PlayerWarpStrikeState : PlayerBaseState
         if (!isStateActive || hasTeleported) return;
         hasTeleported = true;
 
-        didHitEnemy = hitObject != null && (hitObject.CompareTag("Enemy") || hitObject.layer == LayerMask.NameToLayer("Enemy"));
+        bool hit = hitObject != null && (hitObject.CompareTag("Enemy") || hitObject.layer == LayerMask.NameToLayer("Enemy"));
+        if (hit) struckEnemy = hitObject;
+        else struckEnemy = null;
 
         Vector3 finalPos = impactPoint - stateMachine.transform.forward * 0.5f;
         if (hitObject != null) finalPos.y = hitObject.transform.position.y;
@@ -162,10 +164,18 @@ public class PlayerWarpStrikeState : PlayerBaseState
                 stateMachine.ToggleWeaponVisual(true);
                 SpawnGhost(); 
 
-                if (didHitEnemy)
+                if (struckEnemy != null)
                 {
                     stateMachine.Animator.CrossFadeInFixedTime("ThrowSwordHit", 0.05f); 
                     stateMachine.EnableHitbox(); 
+
+                    // 🟢 GUARANTEED DAMAGE: Gây sát thương trực tiếp lên mục tiêu thay vì đợi Hitbox va chạm hên xui
+                    EnemyStateMachine enemy = struckEnemy.GetComponentInParent<EnemyStateMachine>();
+                    if (enemy != null)
+                    {
+                        float baseDamage = stateMachine.CurrentWeapon != null ? stateMachine.CurrentWeapon.Damage : 10f;
+                        enemy.TakeDamage(baseDamage * skill.damageMultiplier, stateMachine.transform.position);
+                    }
 
                     if (skill.vfxPrefab != null) 
                     {
@@ -199,7 +209,7 @@ public class PlayerWarpStrikeState : PlayerBaseState
                 if (stateInfo.normalizedTime >= 0.9f && !stateMachine.Animator.IsInTransition(0)) 
                 {
                     mainCam.fieldOfView = originalFOV; 
-                    stateMachine.SwitchState(new PlayerMoveState(stateMachine));
+                    stateMachine.SwitchState(new PlayerMovementState(stateMachine));
                 }
             }
         }

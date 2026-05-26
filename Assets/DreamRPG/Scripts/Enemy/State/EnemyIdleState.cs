@@ -1,9 +1,5 @@
 using UnityEngine;
 
-/// <summary>
-/// EnemyIdleState — Đứng im, cảm biến xung quanh, chuyển Patrol hoặc Chase.
-/// Nếu đã có aggro memory → skip cảm biến, chuyển thẳng Chase.
-/// </summary>
 public class EnemyIdleState : EnemyState
 {
     private float idleTimer;
@@ -29,11 +25,10 @@ public class EnemyIdleState : EnemyState
         tickRateTimer = 0f;
         stateMachine.ManualVelocity = Vector3.zero;
 
-        // AGGRO MEMORY: Nếu đã biết Player ở đâu → skip chờ, lập tức cảnh giác
         if (stateMachine.HasAggro)
         {
             isSuspicious = true;
-            alertTimer   = stateMachine.Stats.alertDuration * 0.5f; // alert nhanh hơn bình thường
+            alertTimer   = stateMachine.Stats.alertDuration * 0.5f;
         }
     }
 
@@ -41,56 +36,47 @@ public class EnemyIdleState : EnemyState
     {
         if (stateMachine.PlayerTarget == null) return;
 
-        // ── NHÁNH 1: ĐÃ SINH NGHI ──────────────────────────────────
         if (isSuspicious)
         {
             alertTimer -= deltaTime;
-
             float timeInAlert = stateMachine.Stats.alertDuration - alertTimer;
             if (timeInAlert > 0.3f)
             {
-                Vector3 lookTarget = stateMachine.HasAggro
-                    ? stateMachine.LastKnownPlayerPos
-                    : stateMachine.PlayerTarget.position;
+                Vector3 lookTarget = stateMachine.HasAggro ? stateMachine.LastKnownPlayerPos : stateMachine.PlayerTarget.position;
+                stateMachine.FaceTarget(lookTarget, 2f);
 
                 Vector3 dirToPlayer = (lookTarget - stateMachine.transform.position).normalized;
                 dirToPlayer.y = 0;
                 if (dirToPlayer.sqrMagnitude > 0.1f)
                 {
                     Quaternion targetRot = Quaternion.LookRotation(dirToPlayer);
-                    stateMachine.transform.rotation = Quaternion.Slerp(
-                        stateMachine.transform.rotation, targetRot, deltaTime * 2f);
+                    stateMachine.transform.rotation = Quaternion.Slerp(stateMachine.transform.rotation, targetRot, deltaTime * 2f);
                 }
             }
 
             if (alertTimer <= 0)
             {
                 stateMachine.HasAggro = true;
-                stateMachine.SwitchState(new EnemyChaseState(stateMachine));
+                stateMachine.SwitchState(stateMachine.ChaseState);
             }
             return;
         }
 
-        // ── NHÁNH 2: BÌNH THƯỜNG ──────────────────────────────────
         idleTimer     -= deltaTime;
         fidgetTimer   -= deltaTime;
         tickRateTimer -= deltaTime;
 
-        // Fidget animation
         if (fidgetTimer <= 0)
         {
-            // stateMachine.Anim.SetTrigger("Fidget");
             fidgetTimer = Random.Range(3f, 6f);
         }
 
-        // Chuyển Patrol
         if (idleTimer <= 0)
         {
-            stateMachine.SwitchState(new EnemyPatrolState(stateMachine));
+            stateMachine.SwitchState(stateMachine.PatrolState);
             return;
         }
 
-        // Cảm biến (throttled)
         if (tickRateTimer <= 0)
         {
             CheckPerception();
@@ -104,14 +90,12 @@ public class EnemyIdleState : EnemyState
         Vector3 enemyPos  = stateMachine.transform.position;
         float dist = Vector3.Distance(enemyPos, playerPos);
 
-        // A. Thính giác
         if (dist <= stateMachine.Stats.hearingRange && stateMachine.IsPlayerMoving)
         {
             TriggerSuspicion();
             return;
         }
 
-        // B. Thị giác (cone + raycast)
         if (dist <= stateMachine.Stats.visionRange)
         {
             Vector3 dir   = (playerPos - enemyPos).normalized;
@@ -124,8 +108,7 @@ public class EnemyIdleState : EnemyState
 
                 if (Physics.Raycast(rayStart, rayDir, out RaycastHit hit, stateMachine.Stats.visionRange))
                 {
-                    if (hit.transform.CompareTag("Player"))
-                        TriggerSuspicion();
+                    if (hit.transform.CompareTag("Player")) TriggerSuspicion();
                 }
             }
         }
@@ -135,11 +118,7 @@ public class EnemyIdleState : EnemyState
     {
         isSuspicious = true;
         alertTimer   = stateMachine.Stats.alertDuration;
-        // stateMachine.Anim.SetBool("IsAlert", true);
     }
 
-    public override void Exit()
-    {
-        // stateMachine.Anim.SetBool("IsAlert", false);
-    }
+    public override void Exit() { }
 }

@@ -6,10 +6,10 @@ public class ArrowProjectile : MonoBehaviour
     private Collider myCollider;
     private bool hasHit = false;
     private float damage;
-    private Vector3 shooterPosition; // Vị trí Player lúc bắn
+    private Vector3 shooterPosition; 
 
     [SerializeField] private float lifeTime = 10f;
-    private float lifeTimer; // 🟢 FIX: Thay Invoke/Destroy bằng bộ đếm thời gian tự thân
+    private float lifeTimer; 
 
     void Awake()
     {
@@ -17,7 +17,6 @@ public class ArrowProjectile : MonoBehaviour
         myCollider = GetComponent<Collider>();
     }
 
-    // 🟢 FIX: Hàm này chạy mỗi khi mũi tên được kéo ra từ Pool
     private void OnEnable()
     {
         hasHit = false;
@@ -25,10 +24,10 @@ public class ArrowProjectile : MonoBehaviour
         if (rb != null) 
         {
             rb.isKinematic = false;
-            rb.linearVelocity = Vector3.zero; // Reset lực cũ
+            rb.linearVelocity = Vector3.zero; 
         }
-        lifeTimer = lifeTime; // Cài đặt lại đồng hồ đếm ngược
-        transform.SetParent(null); // Gỡ khỏi xác quái cũ (nếu có)
+        lifeTimer = lifeTime; 
+        transform.SetParent(null); 
     }
 
     public void Launch(float force, float damageValue)
@@ -36,7 +35,6 @@ public class ArrowProjectile : MonoBehaviour
         if (rb == null) rb = GetComponent<Rigidbody>();
         
         damage = damageValue;
-        // 🟢 FIX: Lưu vị trí Player lúc bắn để truyền cho quái biết kẻ tấn công ở đâu
         var player = GameObject.FindGameObjectWithTag("Player");
         shooterPosition = player != null ? player.transform.position : transform.position;
         rb.isKinematic = false;
@@ -45,7 +43,6 @@ public class ArrowProjectile : MonoBehaviour
 
     void FixedUpdate()
     {
-        // 🟢 FIX: Đếm thời gian sống, nếu hết thì cất vào Pool
         if (!hasHit)
         {
             lifeTimer -= Time.fixedDeltaTime;
@@ -57,7 +54,6 @@ public class ArrowProjectile : MonoBehaviour
         }
         else
         {
-            // Nếu đã ghim vào tường/quái, cũng cho nó một bộ đếm để tự biến mất sau 5-10s
             lifeTimer -= Time.fixedDeltaTime;
             if (lifeTimer <= 0) ObjectPoolManager.Instance.ReturnToPool(gameObject);
             return;
@@ -81,6 +77,7 @@ public class ArrowProjectile : MonoBehaviour
 
     private void ExecuteHit(Collider hitCollider)
     {
+        // Bỏ qua Player và các Trigger (tránh lỗi đâm vào hitbox của quái chưa kích hoạt)
         if (hitCollider.CompareTag("Player")) return; 
         if (hitCollider.isTrigger) return; 
 
@@ -98,25 +95,20 @@ public class ArrowProjectile : MonoBehaviour
 
             transform.SetParent(hitCollider.transform, true); 
 
-            // 🟢 FIX: Truyền vị trí NGƯỜI BẮN (Player) chứ không phải vị trí mũi tên va chạm
-            // Để quái biết kẻ tấn công ở xa → kích hoạt phản ứng né/đỡ mũi tên
+            // Gọi TakeDamage bình thường và truyền vị trí Kratos
             target.TakeDamage(damage, shooterPosition);
             
-            lifeTimer = 5f; // Ghim vào quái 5s rồi tự biến mất về Pool
+            lifeTimer = 5f; 
         }
         else if (hitCollider.gameObject.layer == LayerMask.NameToLayer("Environment"))
         {
             hasHit = true;
-            
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
             rb.isKinematic = true;
-            
             if (myCollider != null) myCollider.enabled = false;
-            
             transform.SetParent(hitCollider.transform, true);
-
-            lifeTimer = 10f; // Ghim vào tường 10s rồi về Pool
+            lifeTimer = 10f; 
         }
     }
 }

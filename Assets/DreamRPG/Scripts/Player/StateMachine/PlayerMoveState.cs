@@ -1,7 +1,7 @@
 using UnityEngine;
 using Unity.Cinemachine; 
 
-public class PlayerMoveState : PlayerBaseState
+public class PlayerMovementState : PlayerBaseState
 {
     private readonly int FreeLookSpeedHash = Animator.StringToHash("FreeLookSpeed");
     private readonly int InputXHash = Animator.StringToHash("InputX");
@@ -10,9 +10,9 @@ public class PlayerMoveState : PlayerBaseState
 
     private const float AnimatorDampTime = 0.2f;
     private float fallTimer = 0f;
-    private bool wasHardLocking = false; // Vẫn giữ lại để theo dõi (nếu cần dùng sau này)
+    private bool wasHardLocking = false; 
 
-    public PlayerMoveState(PlayerStateMachine stateMachine) : base(stateMachine) {}
+    public PlayerMovementState(PlayerStateMachine stateMachine) : base(stateMachine) {}
 
     public override void Enter()
     {
@@ -25,9 +25,8 @@ public class PlayerMoveState : PlayerBaseState
         string locoName = stateMachine.CurrentWeapon != null ? stateMachine.CurrentWeapon.LocomotionStateName : "Unarmed_Locomotion";
         stateMachine.Animator.CrossFadeInFixedTime(locoName, 0.2f);
         
-        if (stateMachine.FootIK != null) stateMachine.FootIK.enabled = true;
 
-        // Reset vận tốc rơi khi vào MoveState (tránh carryover từ FallState)
+        // Reset vận tốc rơi khi vào MoveState
         stateMachine.VerticalVelocity = -2f;
         fallTimer = 0f;
 
@@ -50,17 +49,6 @@ public class PlayerMoveState : PlayerBaseState
         Vector3 movement = CalculateMovement(); 
         bool isHardLocking = stateMachine.TargetSys != null && stateMachine.TargetSys.IsHardLocking && stateMachine.TargetSys.GetCurrentTarget() != null;
 
-        // Không dùng C# ép CrossFade nữa, để Animator tự xử lý bằng biến IsStrafing
-        /*
-        if (isHardLocking != wasHardLocking)
-        {
-            wasHardLocking = isHardLocking;
-        }
-        */
-
-        // 🟢 CẬP NHẬT: Khi ở MoveState bình thường, KHÔNG dùng Strafe, 
-        // cho phép nhân vật tự do xoay mặt chạy xung quanh quái vật (1 hướng)
-        
         bool isTryingToSprint = stateMachine.InputReader.IsSprinting;
         bool isMoving = movement.sqrMagnitude > 0;
 
@@ -80,7 +68,7 @@ public class PlayerMoveState : PlayerBaseState
         {
             if (isSprinting) stateMachine.Stamina.UseStamina(10f * deltaTime);
 
-            // Luôn xoay mặt theo hướng di chuyển (thay vì nhìn chằm chằm quái vật)
+            // Luôn xoay mặt theo hướng di chuyển
             FaceMovementDirection(movement, deltaTime);
             
             float targetAnim = isSprinting ? 2f : 1f;
@@ -91,28 +79,39 @@ public class PlayerMoveState : PlayerBaseState
             stateMachine.Animator.SetFloat(FreeLookSpeedHash, 0f, AnimatorDampTime, deltaTime);
         }
 
-        // 🟢 ÉP Animator hiểu là ĐANG KHÔNG STRAFE (Tắt Blend Tree 2D đi 4 hướng)
+        // ÉP Animator hiểu là ĐANG KHÔNG STRAFE (Tắt Blend Tree 2D đi 4 hướng)
         stateMachine.Animator.SetBool(IsStrafeHash, false);
         stateMachine.Animator.SetFloat(InputXHash, 0, AnimatorDampTime, deltaTime);
         stateMachine.Animator.SetFloat(InputYHash, 0, AnimatorDampTime, deltaTime);
 
         stateMachine.CurrentVelocity = Vector3.Lerp(stateMachine.CurrentVelocity, targetVelocity, deltaTime * 10f);
-        Vector3 finalMovement = stateMachine.CurrentVelocity;
-        finalMovement.y = stateMachine.VerticalVelocity; 
+        
+        // 🟢 FIX 1: Ép vận tốc chạy dọc theo sườn dốc
+        Vector3 finalMovement = AdjustVelocityToSlope(stateMachine.CurrentVelocity);
+
+        // 🟢 FIX 2: Ép lực dính đất (Stick to ground) chống cà giật
+        if (stateMachine.Controller.isGrounded && finalMovement.y <= 0)
+        {
+            stateMachine.VerticalVelocity = -5f; // Lực ghim chân mạnh hơn
+            finalMovement.y += stateMachine.VerticalVelocity; 
+        }
+        else
+        {
+            finalMovement.y = stateMachine.VerticalVelocity;
+        }
+
         stateMachine.Controller.Move(finalMovement * deltaTime);
 
         if (stateMachine.InputReader.IsJumping) 
         { 
-            if (stateMachine.Stamina.HasEnoughStamina(15f)) // 🟢 FIX: Check Stamina ở đây
+            if (stateMachine.Stamina.HasEnoughStamina(15f)) 
             {
                 stateMachine.SwitchState(new PlayerJumpState(stateMachine)); 
             }
             return; 
         }
 
-        // 🟢 FIX: Fall detection cải tiến — chống loop
-        // Điều kiện: phải rời đất ≥ 0.3s VÀ vận tốc rơi đủ mạnh (< -3)
-        // Ngăn chặn false-positive trên dốc/bậc thang
+        // Fall detection cải tiến — chống loop
         if (!stateMachine.Controller.isGrounded)
         {
             fallTimer += deltaTime;
@@ -153,6 +152,33 @@ public class PlayerMoveState : PlayerBaseState
         if (movement == Vector3.zero) return;
         Quaternion targetRotation = Quaternion.LookRotation(movement);
         stateMachine.transform.rotation = Quaternion.Slerp(stateMachine.transform.rotation, targetRotation, deltaTime * stateMachine.RotationDamping);
+    }
+
+    // 🟢 HÀM MỚI: Bẻ cong vận tốc ép sát theo độ nghiêng của dốc
+    private Vector3 AdjustVelocityToSlope(Vector3 velocity)
+    {
+        // Bắn tia từ vị trí nhích lên một chút để không bị kẹt dưới sàn
+        Ray ray = new Ray(stateMachine.transform.position + Vector3.up * 0.2f, Vector3.down);
+        
+        // Quét khoảng cách 0.5m xuống dưới chân
+        if (Physics.Raycast(ray, out RaycastHit hit, 0.5f))
+        {
+            float slopeAngle = Vector3.Angle(Vector3.up, hit.normal);
+
+            // Nếu đang đứng trên mặt phẳng có độ dốc (lớn hơn 0)
+            if (slopeAngle > 0f)
+            {
+                // Bẻ cong vector di chuyển chạy dọc theo mặt dốc
+                Vector3 slopeVelocity = Vector3.ProjectOnPlane(velocity, hit.normal);
+                
+                // Chỉ ép dính khi đi xuống dốc (y < 0)
+                if (slopeVelocity.y < 0)
+                {
+                    return slopeVelocity;
+                }
+            }
+        }
+        return velocity;
     }
 
     private void OnRoll() 

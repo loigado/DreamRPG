@@ -53,4 +53,23 @@ public class StaminaSystem : MonoBehaviour
         timeSinceLastUse = 0f; // Reset lại bộ đếm Delay
         OnStaminaChanged?.Invoke(CurrentStamina / MaxStamina);
     }
+    /// <summary>
+    /// Hồi phục ngay lập tức một lượng thể lực (Dùng cho cơ chế Perfect Parry hút năng lượng)
+    /// </summary>
+    public void HealStamina(float amount)
+    {
+        if (amount <= 0) return;
+
+        // Lưu ý: Đổi tên biến CurrentStamina và MaxStamina cho khớp với code hiện tại của bạn
+        CurrentStamina += amount;
+
+        // Đảm bảo không vượt quá giới hạn tối đa
+        if (CurrentStamina > MaxStamina)
+        {
+            CurrentStamina = MaxStamina;
+        }
+
+        // Nếu bạn có Event để update thanh UI Stamina, hãy gọi nó ở đây
+        // Ví dụ: OnStaminaChanged?.Invoke(CurrentStamina / MaxStamina);
+    }
 }

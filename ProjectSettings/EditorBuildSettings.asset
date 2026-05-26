@@ -6,14 +6,13 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 0
-    path: Assets/Scenes/SampleScene.unity
-    guid: 99c9720ab356a0642a771bea13969a05
+    path: Assets/Scenes/The_Viking_Village.unity
+    guid: 00000000000000000000000000000000
   - enabled: 1
     path: Assets/Scenes/MainMenu.unity
     guid: d8ef6f56728aefa48bcec37cc68d37be
   - enabled: 1
-    path: Assets/TerrainDemoScene_URP/Scenes/TerrainDemoScene.unity
-    guid: 9a18cc5d35536fd428eb6e90b3402589
-  m_configObjects:
-    com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+    path: Assets/Scenes/Demo.unity
+    guid: a1531c3078ba065458666f4caf2c1e66
+  m_configObjects: {}
   m_UseUCBPForAssetBundles: 0

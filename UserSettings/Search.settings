@@ -9,7 +9,7 @@ onBoardingDoNotAskAgain = true
 showPackageIndexes = false
 showStatusBar = false
 scopes = {
-	"last_search.66F56946" = "back"
+	"last_search.66F56946" = "hit ele"
 	"OpenInspectorPreview.66F56946" = "0"
 	"currentGroup.66F56946" = "all"
 	"picker_window_position_offset.00000000" = "106;167;320;550"
@@ -72,6 +72,14 @@ providers = {
 objectSelectors = {
 }
 recentSearches = [
+	"t"
+	"bld"
+	"parr"
+	"AfterimageController"
+	"s"
+	"l"
+	"_MAIN_LIGHT_SHADOWS"
+	"crosshai"
 	"h"
 	"Crystals crossfade"
 	"Lightning-Smoke2"
@@ -83,10 +91,6 @@ recentSearches = [
 	"im"
 	"a"
 	"av"
-	"t"
-	"reco"
-	"t:script reco"
-	"t:script PlayerMoveState"
 ]
 searchItemFavorites = [
 ]
